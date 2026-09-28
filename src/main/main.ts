@@ -1,16 +1,18 @@
-/* eslint global-require: off, no-console: off, promise/always-return: off */
-
-/**
- * This module executes inside of electron's main process. You can start
- * electron renderer process from here and communicate with the other processes
- * through IPC.
- *
- * When running `npm run build`, this file is compiled to
- * `./release/app/dist/main/main.js` using electron-vite.
- */
-import { app, BrowserWindow, shell } from 'electron';
+/* eslint no-console: off, promise/always-return: off */
+import path from 'node:path';
+import {
+  app,
+  BrowserWindow,
+  ipcMain,
+  Menu,
+  nativeTheme,
+  shell,
+  WebContentsView,
+} from 'electron';
+import { setupTitlebarAndAttachToWindow } from 'custom-electron-titlebar/main';
 import log from 'electron-log';
 import windowStateKeeper from 'electron-window-state';
+import { SiteHistory } from './history';
 import MenuBuilder from './menu';
 import {
   createDebouncedUrlSave,
@@ -22,6 +24,7 @@ import {
 import { getSettingsStore } from './settings';
 import startAutoUpdates from './updates';
 
+const TITLEBAR_HEIGHT = 32;
 let mainWindow: BrowserWindow | null = null;
 
 if (process.env.NODE_ENV === 'production') {
@@ -33,14 +36,13 @@ const isDebug =
 
 if (isDebug) {
   void import('electron-debug')
-    .then(({ default: debug }) => debug())
+    .then(({ default: debug }) => debug({ showDevTools: false }))
     .catch(console.error);
 }
 
 const createWindow = async () => {
   const settings = getSettingsStore();
-  const savedUrl = settings.get('lastUrl');
-  const startUrl = getStartupUrl(savedUrl);
+  const startUrl = getStartupUrl(settings.get('lastUrl'));
   const urlSave = createDebouncedUrlSave((url) => {
     settings.set('lastUrl', url);
   });
@@ -55,6 +57,30 @@ const createWindow = async () => {
     y: windowState.y,
     width: windowState.width,
     height: windowState.height,
+    minWidth: 640,
+    minHeight: 400,
+    titleBarStyle: 'hidden',
+    backgroundColor: nativeTheme.shouldUseDarkColors ? '#202124' : '#f6f8fb',
+    autoHideMenuBar: true,
+    webPreferences: {
+      preload: path.join(__dirname, '../preload/preload.js'),
+      nodeIntegration: false,
+      contextIsolation: true,
+      sandbox: false,
+    },
+  });
+  mainWindow = window;
+  windowState.manage(window);
+  const updateWindowTheme = () => {
+    if (!window.isDestroyed()) {
+      window.setBackgroundColor(
+        nativeTheme.shouldUseDarkColors ? '#202124' : '#f6f8fb',
+      );
+    }
+  };
+  nativeTheme.on('updated', updateWindowTheme);
+
+  const siteView = new WebContentsView({
     webPreferences: {
       nodeIntegration: false,
       contextIsolation: true,
@@ -62,29 +88,113 @@ const createWindow = async () => {
       webviewTag: false,
     },
   });
-  mainWindow = window;
-  windowState.manage(window);
+  const site = siteView.webContents;
+  const history = new SiteHistory();
+  window.contentView.addChildView(siteView);
+
+  const resizeSiteView = () => {
+    const [width, height] = window.getContentSize();
+    const top = window.isFullScreen() ? 0 : TITLEBAR_HEIGHT;
+    siteView.setBounds({
+      x: 0,
+      y: top,
+      width,
+      height: Math.max(0, height - top),
+    });
+  };
+  resizeSiteView();
+  window.on('resize', resizeSiteView);
+  window.on('enter-full-screen', resizeSiteView);
+  window.on('leave-full-screen', resizeSiteView);
+
+  const sendHistoryState = () => {
+    if (window.isDestroyed() || window.webContents.isDestroyed()) return;
+    window.webContents.send('toolbar:history', {
+      canGoBack: history.canGoBack() || site.navigationHistory.canGoBack(),
+      canGoForward:
+        history.canGoForward() || site.navigationHistory.canGoForward(),
+    });
+  };
+  const sendTitle = (pageTitle: string) => {
+    if (window.isDestroyed() || window.webContents.isDestroyed()) return;
+    const trimmedTitle = pageTitle.trim();
+    const title = !trimmedTitle
+      ? 'Axioo Store'
+      : /axioo/i.test(trimmedTitle)
+        ? trimmedTitle
+        : `Axioo Store | ${trimmedTitle}`;
+    window.setTitle(title);
+    window.webContents.send('toolbar:title', title);
+  };
+  site.on('did-finish-load', sendHistoryState);
+  window.webContents.on('did-finish-load', sendHistoryState);
+  site.on('page-title-updated', (_event, pageTitle) => sendTitle(pageTitle));
+  site.on('did-finish-load', () => sendTitle(site.getTitle()));
+  window.webContents.on('did-finish-load', () => sendTitle(site.getTitle()));
+
+  const recordHistory = (url: string, inPage: boolean) => {
+    void site
+      .executeJavaScript('window.history.length', true)
+      .then((length: number) => {
+        if (inPage) history.recordInPage(url, length);
+        else history.recordDocument(url, length);
+        sendHistoryState();
+      })
+      .catch(() => sendHistoryState());
+  };
+
+  const onToolbarCommand = (
+    event: Electron.IpcMainEvent,
+    command: 'back' | 'forward' | 'menu' | 'ready',
+  ) => {
+    if (event.sender !== window.webContents) return;
+    if (command === 'back' && history.canGoBack()) {
+      void site
+        .executeJavaScript('window.history.back()')
+        .catch((error: unknown) => {
+          log.error('Failed to go back', error);
+        });
+    } else if (command === 'back' && site.navigationHistory.canGoBack()) {
+      site.navigationHistory.goBack();
+    } else if (command === 'forward' && history.canGoForward()) {
+      void site
+        .executeJavaScript('window.history.forward()')
+        .catch((error: unknown) => {
+          log.error('Failed to go forward', error);
+        });
+    } else if (command === 'forward' && site.navigationHistory.canGoForward()) {
+      site.navigationHistory.goForward();
+    } else if (command === 'menu') {
+      Menu.getApplicationMenu()?.popup({ window });
+    } else if (command === 'ready') {
+      sendTitle(site.getTitle());
+    }
+    sendHistoryState();
+  };
+  ipcMain.on('toolbar:command', onToolbarCommand);
 
   window.on('ready-to-show', () => {
-    if (process.env.START_MINIMIZED) {
-      window.minimize();
-    } else {
-      window.show();
-    }
+    if (process.env.START_MINIMIZED) window.minimize();
+    else window.show();
   });
 
   window.on('close', () => {
-    const currentUrl = getStoreUrl(window.webContents.getURL());
+    const currentUrl = getStoreUrl(site.getURL());
     if (currentUrl) urlSave.schedule(currentUrl);
     urlSave.flush();
   });
 
   window.on('closed', () => {
+    nativeTheme.removeListener('updated', updateWindowTheme);
+    ipcMain.removeListener('toolbar:command', onToolbarCommand);
+    site.close();
     mainWindow = null;
   });
 
-  const menuBuilder = new MenuBuilder(window);
+  const menuBuilder = new MenuBuilder(window, site);
   menuBuilder.buildMenu();
+  window.setMenuBarVisibility(false);
+  await setupTitlebarAndAttachToWindow(window);
 
   const openExternal = (url: string) => {
     const externalUrl = getExternalUrl(url);
@@ -104,7 +214,7 @@ const createWindow = async () => {
 
     event.preventDefault();
     if (internalUrl) {
-      void window.loadURL(internalUrl).catch((error: unknown) => {
+      void site.loadURL(internalUrl).catch((error: unknown) => {
         log.error('Failed to load internal URL', error);
       });
     } else {
@@ -112,22 +222,24 @@ const createWindow = async () => {
     }
   };
 
-  window.webContents.on('will-navigate', (event) => {
+  site.on('will-navigate', (event) => {
     handleNavigation(event, event.url);
   });
-  window.webContents.on('will-redirect', (event) => {
+  site.on('will-redirect', (event) => {
     if (event.isMainFrame) handleNavigation(event, event.url);
   });
-  window.webContents.on('did-navigate', (_event, url) => {
+  site.on('did-navigate', (_event, url) => {
+    recordHistory(url, false);
     const storeUrl = getStoreUrl(url);
     if (storeUrl) urlSave.schedule(storeUrl);
   });
-  window.webContents.on('did-navigate-in-page', (_event, url, isMainFrame) => {
+  site.on('did-navigate-in-page', (_event, url, isMainFrame) => {
     if (!isMainFrame) return;
+    recordHistory(url, true);
     const storeUrl = getStoreUrl(url);
     if (storeUrl) urlSave.schedule(storeUrl);
   });
-  window.webContents.on(
+  site.on(
     'did-fail-load',
     (_event, errorCode, errorDescription, validatedURL, isMainFrame) => {
       if (!isMainFrame || errorCode === -3) return;
@@ -136,11 +248,11 @@ const createWindow = async () => {
     },
   );
 
-  window.webContents.setWindowOpenHandler(({ url }) => {
+  site.setWindowOpenHandler(({ url }) => {
     const internalUrl = getInternalUrl(url);
     setImmediate(() => {
       if (internalUrl && !window.isDestroyed()) {
-        void window.loadURL(internalUrl).catch((error: unknown) => {
+        void site.loadURL(internalUrl).catch((error: unknown) => {
           log.error('Failed to load internal URL', error);
         });
       } else if (!internalUrl) {
@@ -150,21 +262,19 @@ const createWindow = async () => {
     return { action: 'deny' };
   });
 
-  void window.loadURL(startUrl).catch((error: unknown) => {
+  const rendererUrl = process.env.ELECTRON_RENDERER_URL;
+  if (rendererUrl) {
+    await window.loadURL(rendererUrl);
+  } else {
+    await window.loadFile(path.join(__dirname, '../renderer/index.html'));
+  }
+  void site.loadURL(startUrl).catch((error: unknown) => {
     log.error('Failed to load Axioo Store', error);
   });
 };
 
-/**
- * Add event listeners...
- */
-
 app.on('window-all-closed', () => {
-  // Respect the OSX convention of having the application in memory even
-  // after all windows have been closed
-  if (process.platform !== 'darwin') {
-    app.quit();
-  }
+  if (process.platform !== 'darwin') app.quit();
 });
 
 function reportWindowError(error: unknown) {
@@ -174,7 +284,6 @@ function reportWindowError(error: unknown) {
 }
 
 function onActivate() {
-  // Reopening a macOS window must not initialize another updater.
   if (mainWindow === null) {
     void createWindow().catch(reportWindowError);
   }

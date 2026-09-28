@@ -3,6 +3,7 @@ const { spawn, spawnSync } = require('node:child_process');
 const { setTimeout: delay } = require('node:timers/promises');
 
 const debugPort = Number(process.env.SMOKE_DEBUG_PORT || 9335);
+const rendererPort = Number(process.env.PORT || 1212);
 const windows = process.platform === 'win32';
 const child = spawn(
   windows ? 'npm.cmd' : 'npm',
@@ -23,6 +24,7 @@ const child = spawn(
 let output = '';
 let exited = false;
 let socket;
+let toolbarSocket;
 child.stdout.on('data', (data) => {
   output += data;
 });
@@ -37,8 +39,8 @@ child.on('error', (error) => {
   exited = true;
 });
 
-async function waitFor(check, description) {
-  const deadline = Date.now() + 120_000;
+async function waitFor(check, description, timeoutMs = 120_000) {
+  const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
     if (exited) throw new Error(`npm start exited before ${description}`);
     const value = await check();
@@ -112,14 +114,176 @@ async function main() {
   }
   await send('Runtime.enable');
   assert.equal(await evaluate('typeof window.require'), 'undefined');
+
+  const toolbarTarget = await waitFor(async () => {
+    try {
+      const response = await fetch(`http://127.0.0.1:${debugPort}/json/list`);
+      const targets = await response.json();
+      return targets.find(
+        (entry) =>
+          entry.type === 'page' &&
+          entry.url === `http://localhost:${rendererPort}/`,
+      );
+    } catch {
+      return null;
+    }
+  }, 'local title bar');
+  toolbarSocket = new WebSocket(toolbarTarget.webSocketDebuggerUrl);
+  await new Promise((resolve, reject) => {
+    toolbarSocket.addEventListener('open', resolve, { once: true });
+    toolbarSocket.addEventListener('error', reject, { once: true });
+  });
+  let toolbarRequestId = 0;
+  const evaluateToolbar = (expression) =>
+    new Promise((resolve, reject) => {
+      toolbarRequestId += 1;
+      const requestId = toolbarRequestId;
+      const onMessage = ({ data }) => {
+        const message = JSON.parse(data);
+        if (message.id !== requestId) return;
+        toolbarSocket.removeEventListener('message', onMessage);
+        if (message.error || message.result?.exceptionDetails) {
+          reject(new Error(JSON.stringify(message)));
+        } else resolve(message.result.result.value);
+      };
+      toolbarSocket.addEventListener('message', onMessage);
+      toolbarSocket.send(
+        JSON.stringify({
+          id: requestId,
+          method: 'Runtime.evaluate',
+          params: { expression, returnByValue: true },
+        }),
+      );
+    });
+  const titlebarReady = await waitFor(
+    () =>
+      evaluateToolbar(
+        "Boolean(document.querySelector('.axioo-menu-button') && document.querySelector('.axioo-toolbar-logo') && document.querySelector('.axioo-back-button') && document.querySelector('.axioo-forward-button'))",
+      ),
+    'custom title bar controls',
+  );
+  assert.equal(titlebarReady, true);
+  assert.deepEqual(
+    await evaluateToolbar(
+      "[...document.querySelector('.axioo-toolbar-left').children].map((element) => element.className)",
+    ),
+    [
+      'axioo-toolbar-button axioo-back-button',
+      'axioo-toolbar-button axioo-forward-button',
+      'axioo-toolbar-button axioo-menu-button',
+    ],
+  );
+  assert.deepEqual(
+    await evaluateToolbar(
+      "[...document.querySelector('.axioo-toolbar-center').children].map((element) => element.className)",
+    ),
+    ['axioo-toolbar-logo', 'axioo-toolbar-title'],
+  );
+  await waitFor(
+    () =>
+      evaluateToolbar(
+        "document.querySelector('.axioo-toolbar-logo').naturalWidth > 0",
+      ),
+    'Axioo logo',
+  );
+  assert.equal(
+    await evaluateToolbar(
+      "getComputedStyle(document.querySelector('.cet-titlebar')).height",
+    ),
+    '32px',
+  );
+  assert.equal(
+    await evaluateToolbar(
+      "document.querySelector('.axioo-back-button').disabled",
+    ),
+    true,
+  );
+  assert.equal(
+    await evaluateToolbar(
+      "document.querySelector('.axioo-forward-button').disabled",
+    ),
+    true,
+  );
+  await waitFor(
+    () =>
+      evaluate(
+        "window.location.protocol === 'https:' && window.location.hostname.endsWith('axioo.store') && document.readyState === 'complete'",
+      ),
+    'site ready',
+  );
+  const pageTitle = await evaluate('document.title');
+  const expectedTitle = !pageTitle.trim()
+    ? 'Axioo Store'
+    : /axioo/i.test(pageTitle)
+      ? pageTitle.trim()
+      : `Axioo Store | ${pageTitle.trim()}`;
+  await waitFor(
+    () =>
+      evaluateToolbar(
+        `document.querySelector('.axioo-toolbar-title').textContent === ${JSON.stringify(expectedTitle)}`,
+      ),
+    'centered page title',
+  );
+  await evaluate("document.title = 'Orders'; true");
+  await waitFor(
+    () =>
+      evaluateToolbar(
+        "document.querySelector('.axioo-toolbar-title').textContent === 'Axioo Store | Orders'",
+      ),
+    'prefixed window title',
+  );
+  await evaluate("document.title = 'AxIoO Orders'; true");
+  await waitFor(
+    () =>
+      evaluateToolbar(
+        "document.querySelector('.axioo-toolbar-title').textContent === 'AxIoO Orders'",
+      ),
+    'title already containing Axioo',
+  );
+  await evaluate(`document.title = ${JSON.stringify(pageTitle)}; true`);
+  const initialUrl = await evaluate('window.location.href');
+  await evaluate(
+    "window.history.pushState({}, '', '#titlebar-history-smoke'); true",
+  );
+  await waitFor(
+    () =>
+      evaluateToolbar("!document.querySelector('.axioo-back-button').disabled"),
+    'enabled Back button after navigation',
+    10_000,
+  );
+  await evaluateToolbar("document.querySelector('.axioo-back-button').click()");
+  await waitFor(
+    () =>
+      evaluateToolbar(
+        "!document.querySelector('.axioo-forward-button').disabled",
+      ),
+    'enabled Forward button after going back',
+    10_000,
+  );
+  assert.equal(await evaluate('window.location.href'), initialUrl);
+  await evaluateToolbar(
+    "document.querySelector('.axioo-forward-button').click()",
+  );
+  await waitFor(
+    () => evaluate('window.location.hash === "#titlebar-history-smoke"'),
+    'forward navigation',
+    10_000,
+  );
+  await evaluateToolbar("document.querySelector('.axioo-back-button').click()");
+  await waitFor(
+    () => evaluate('window.location.href === ' + JSON.stringify(initialUrl)),
+    'return to the starting URL',
+    10_000,
+  );
   console.log(
-    'Electron startup passed: Axioo Store loaded without Node.js integration.',
+    'Electron startup passed: Axioo Store is isolated and the custom title bar rendered.',
   );
 }
 
 main()
   .finally(async () => {
     socket?.close();
+    toolbarSocket?.close();
     if (windows) {
       spawnSync('taskkill', ['/pid', String(child.pid), '/T', '/F']);
     } else if (child.pid) {

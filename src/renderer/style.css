@@ -1,29 +1,128 @@
 :root {
-  font-family: system-ui, sans-serif;
-  color: #e9edf5;
-  background: #151b29;
+  color-scheme: light dark;
+  font-family: 'Segoe UI', system-ui, sans-serif;
+  --titlebar-background: #f6f8fb;
+  --titlebar-foreground: #1d2b41;
+  --titlebar-border: #dfe6ef;
+  --titlebar-hover: #e8edf5;
+  background: var(--titlebar-background);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --titlebar-background: #202124;
+    --titlebar-foreground: #f0f2f5;
+    --titlebar-border: #383b40;
+    --titlebar-hover: #36393e;
+  }
 }
 
 body {
   margin: 0;
-  min-height: 100vh;
-  display: grid;
-  place-items: center;
 }
 
-.app {
-  box-sizing: border-box;
-  width: min(560px, 100%);
-  padding: 48px 32px;
-  text-align: center;
+.cet-titlebar,
+.cet-titlebar.cet-windows,
+.cet-titlebar.cet-linux,
+.cet-titlebar.cet-freebsd {
+  height: 32px !important;
+  line-height: 32px !important;
+  border-bottom: 1px solid var(--titlebar-border);
 }
 
-h1 {
-  margin: 24px 0 12px;
-  font-size: 2rem;
+.cet-titlebar .cet-title,
+.cet-titlebar .cet-icon {
+  display: none !important;
 }
 
-p {
-  line-height: 1.5;
+.cet-titlebar .cet-window-controls {
+  height: 32px !important;
+}
+
+.cet-titlebar .cet-control-icon {
+  width: 46px;
+}
+
+.axioo-toolbar-left {
+  position: absolute;
+  top: 0;
+  left: 8px;
+  height: 31px;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  z-index: 100;
+  -webkit-app-region: no-drag;
+}
+
+.axioo-toolbar-button {
+  width: 28px;
+  height: 28px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 0;
+  border-radius: 6px;
+  color: var(--titlebar-foreground);
+  background: transparent;
+  cursor: pointer;
+  -webkit-app-region: no-drag;
+}
+
+.axioo-toolbar-button:hover:not(:disabled) {
+  background: var(--titlebar-hover);
+}
+
+.axioo-toolbar-button:focus-visible {
+  outline: 2px solid #4d8ae8;
+  outline-offset: 1px;
+}
+
+.axioo-toolbar-button:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+
+.axioo-toolbar-button svg {
+  width: 16px;
+  height: 16px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.axioo-toolbar-logo {
+  width: 18px;
+  height: 18px;
+  object-fit: contain;
+  flex: none;
+}
+
+.axioo-toolbar-center {
+  position: absolute;
+  top: 0;
+  left: 50%;
+  transform: translateX(-50%);
+  height: 31px;
+  max-width: calc(100% - 370px);
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  pointer-events: none;
+}
+
+.axioo-toolbar-title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--titlebar-foreground);
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.cet-titlebar.cet-mac .axioo-toolbar-left {
+  left: 82px;
 }
 

@@ -1,5 +1,6 @@
 const assert = require('node:assert/strict');
 const { test } = require('node:test');
+const { SiteHistory } = require('../main/history.ts');
 const {
   createDebouncedUrlSave,
   getExternalUrl,
@@ -134,4 +135,23 @@ test('closing flushes the latest URL immediately and only once', (context) => {
   saver.flush();
   context.mock.timers.tick(15_000);
   assert.deepEqual(writes, ['https://axioo.store/checkout']);
+});
+
+test('in-page history enables the available direction and handles a new branch', () => {
+  const history = new SiteHistory();
+  history.recordDocument('https://axioo.store/', 1);
+  assert.equal(history.canGoBack(), false);
+  assert.equal(history.canGoForward(), false);
+
+  history.recordInPage('https://axioo.store/products', 2);
+  assert.equal(history.canGoBack(), true);
+  assert.equal(history.canGoForward(), false);
+
+  history.recordInPage('https://axioo.store/', 2);
+  assert.equal(history.canGoBack(), false);
+  assert.equal(history.canGoForward(), true);
+
+  history.recordInPage('https://axioo.store/cart', 2);
+  assert.equal(history.canGoBack(), true);
+  assert.equal(history.canGoForward(), false);
 });

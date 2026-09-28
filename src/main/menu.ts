@@ -3,13 +3,17 @@ import {
   shell,
   BrowserWindow,
   MenuItemConstructorOptions,
+  WebContents,
 } from 'electron';
 
 export default class MenuBuilder {
   mainWindow: BrowserWindow;
 
-  constructor(mainWindow: BrowserWindow) {
+  siteContents: WebContents;
+
+  constructor(mainWindow: BrowserWindow, siteContents: WebContents) {
     this.mainWindow = mainWindow;
+    this.siteContents = siteContents;
   }
 
   buildMenu(): Menu {
@@ -32,14 +36,14 @@ export default class MenuBuilder {
   }
 
   setupDevelopmentEnvironment(): void {
-    this.mainWindow.webContents.on('context-menu', (_, props) => {
+    this.siteContents.on('context-menu', (_, props) => {
       const { x, y } = props;
 
       Menu.buildFromTemplate([
         {
           label: 'Inspect element',
           click: () => {
-            this.mainWindow.webContents.inspectElement(x, y);
+            this.siteContents.inspectElement(x, y);
           },
         },
       ]).popup({ window: this.mainWindow });
@@ -96,8 +100,11 @@ export default class MenuBuilder {
     return [
       ...(development
         ? ([
-            { role: 'reload' },
-            { role: 'toggleDevTools' },
+            { label: 'Reload Page', click: () => this.siteContents.reload() },
+            {
+              label: 'Toggle Developer Tools',
+              click: () => this.siteContents.toggleDevTools(),
+            },
           ] as MenuItemConstructorOptions[])
         : []),
       { role: 'togglefullscreen' },
