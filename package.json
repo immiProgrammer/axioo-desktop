@@ -1,0 +1,150 @@
+{
+  "name": "axioo-desktop",
+  "version": "0.1.0",
+  "description": "A simple Electron desktop app",
+  "keywords": [
+    "electron",
+    "typescript",
+    "ts",
+    "vite"
+  ],
+  "license": "MIT",
+  "main": "./release/app/dist/main/main.js",
+  "scripts": {
+    "build": "electron-vite build",
+    "postinstall": "npm --prefix .erb/tooling ci && install-electron && electron-builder install-app-deps",
+    "lint": "cross-env NODE_ENV=development eslint . --ext .js,.ts,.cjs",
+    "lint:fix": "cross-env NODE_ENV=development eslint . --ext .js,.ts,.cjs --fix",
+    "package": "npm run build && electron-builder build --publish never",
+    "rebuild": "electron-rebuild --parallel --types prod,dev,optional --module-dir release/app",
+    "start": "electron-vite dev --watch",
+    "test:smoke": "node .erb/scripts/smoke-test.cjs",
+    "preview": "electron-vite preview"
+  },
+  "prettier": {
+    "singleQuote": true,
+    "overrides": [
+      {
+        "files": [
+          ".prettierrc",
+          ".eslintrc"
+        ],
+        "options": {
+          "parser": "json"
+        }
+      }
+    ]
+  },
+  "dependencies": {
+    "@electron/notarize": "^3.1.1",
+    "electron-debug": "^4.1.0",
+    "electron-log": "^5.4.4",
+    "electron-store": "^11.0.2",
+    "electron-updater": "^6.8.9",
+    "electron-window-state": "^5.0.3"
+  },
+  "devDependencies": {
+    "@electron/rebuild": "^4.2.0",
+    "@eslint/compat": "^2.1.1",
+    "@eslint/js": "^10.0.1",
+    "@swc/core": "^1.16.2",
+    "@types/node": "26.6.0",
+    "@types/semver": "^7.8.0",
+    "cross-env": "^10.1.0",
+    "electron": "^44.4.0",
+    "electron-builder": "^26.15.3",
+    "electron-vite": "^5.0.0",
+    "eslint": "^10.10.0",
+    "eslint-config-prettier": "^10.1.8",
+    "eslint-plugin-compat": "^7.0.2",
+    "eslint-plugin-import": "^2.32.0",
+    "eslint-plugin-prettier": "^5.5.6",
+    "eslint-plugin-promise": "^7.3.0",
+    "globals": "^17.12.0",
+    "prettier": "^3.9.6",
+    "typescript": "^7.0.2",
+    "vite": "^7.3.6"
+  },
+  "build": {
+    "productName": "Axioo Desktop",
+    "appId": "com.axioo.desktop",
+    "asar": true,
+    "afterSign": ".erb/scripts/notarize.js",
+    "asarUnpack": "**\\*.{node,dll}",
+    "files": [
+      "dist",
+      "node_modules",
+      "package.json"
+    ],
+    "mac": {
+      "notarize": false,
+      "target": {
+        "target": "default",
+        "arch": [
+          "arm64",
+          "x64"
+        ]
+      },
+      "type": "distribution",
+      "hardenedRuntime": true,
+      "entitlements": "assets/entitlements.mac.plist",
+      "entitlementsInherit": "assets/entitlements.mac.plist",
+      "gatekeeperAssess": false
+    },
+    "dmg": {
+      "contents": [
+        {
+          "x": 130,
+          "y": 220
+        },
+        {
+          "x": 410,
+          "y": 220,
+          "type": "link",
+          "path": "/Applications"
+        }
+      ]
+    },
+    "win": {
+      "target": [
+        "nsis"
+      ]
+    },
+    "linux": {
+      "target": [
+        "AppImage"
+      ],
+      "category": "Development"
+    },
+    "directories": {
+      "app": "release/app",
+      "buildResources": "build-resources",
+      "output": "release/build"
+    }
+  },
+  "devEngines": {
+    "runtime": {
+      "name": "node",
+      "version": ">=24.0.0",
+      "onFail": "error"
+    },
+    "packageManager": {
+      "name": "npm",
+      "version": ">=10.0.0",
+      "onFail": "error"
+    }
+  },
+  "overrides": {
+    "eslint-plugin-import": {
+      "eslint": "$eslint"
+    }
+  },
+  "engines": {
+    "node": ">=24.0.0",
+    "npm": ">=10.0.0"
+  },
+  "browserslist": [
+    "last 2 Chrome versions"
+  ],
+  "type": "commonjs"
+}
