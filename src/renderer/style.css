@@ -39,6 +39,10 @@ body {
   height: 32px !important;
 }
 
+.cet-titlebar.cet-windows .cet-window-controls {
+  display: none !important;
+}
+
 .cet-titlebar .cet-control-icon {
   width: 46px;
 }

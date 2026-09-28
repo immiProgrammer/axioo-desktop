@@ -163,6 +163,11 @@ async function main() {
     'custom title bar controls',
   );
   assert.equal(titlebarReady, true);
+  await waitFor(
+    () => evaluateToolbar("document.visibilityState === 'visible'"),
+    'visible application window',
+    10_000,
+  );
   assert.deepEqual(
     await evaluateToolbar(
       "[...document.querySelector('.axioo-toolbar-left').children].map((element) => element.className)",
@@ -192,6 +197,15 @@ async function main() {
     ),
     '32px',
   );
+  if (windows) {
+    await waitFor(
+      () =>
+        evaluateToolbar(
+          "navigator.windowControlsOverlay?.visible === true && navigator.windowControlsOverlay.getTitlebarAreaRect().height === 32 && getComputedStyle(document.querySelector('.cet-window-controls')).display === 'none'",
+        ),
+      'native Windows caption buttons',
+    );
+  }
   assert.equal(
     await evaluateToolbar(
       "document.querySelector('.axioo-back-button').disabled",

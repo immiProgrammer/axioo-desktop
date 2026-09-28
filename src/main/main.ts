@@ -60,6 +60,17 @@ const createWindow = async () => {
     minWidth: 640,
     minHeight: 400,
     titleBarStyle: 'hidden',
+    ...(process.platform === 'win32'
+      ? {
+          titleBarOverlay: {
+            color: nativeTheme.shouldUseDarkColors ? '#202124' : '#f6f8fb',
+            symbolColor: nativeTheme.shouldUseDarkColors
+              ? '#f0f2f5'
+              : '#1d2b41',
+            height: TITLEBAR_HEIGHT,
+          },
+        }
+      : {}),
     backgroundColor: nativeTheme.shouldUseDarkColors ? '#202124' : '#f6f8fb',
     autoHideMenuBar: true,
     webPreferences: {
@@ -173,11 +184,6 @@ const createWindow = async () => {
   };
   ipcMain.on('toolbar:command', onToolbarCommand);
 
-  window.on('ready-to-show', () => {
-    if (process.env.START_MINIMIZED) window.minimize();
-    else window.show();
-  });
-
   window.on('close', () => {
     const currentUrl = getStoreUrl(site.getURL());
     if (currentUrl) urlSave.schedule(currentUrl);
@@ -268,6 +274,8 @@ const createWindow = async () => {
   } else {
     await window.loadFile(path.join(__dirname, '../renderer/index.html'));
   }
+  if (process.env.START_MINIMIZED) window.minimize();
+  else window.show();
   void site.loadURL(startUrl).catch((error: unknown) => {
     log.error('Failed to load Axioo Store', error);
   });
