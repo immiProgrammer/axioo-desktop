@@ -12,6 +12,7 @@ import {
 import { setupTitlebarAndAttachToWindow } from 'custom-electron-titlebar/main';
 import log from 'electron-log';
 import windowStateKeeper from 'electron-window-state';
+import { registerFetchBridge } from './fetch-bridge';
 import { SiteHistory } from './history';
 import MenuBuilder from './menu';
 import {
@@ -93,14 +94,16 @@ const createWindow = async () => {
 
   const siteView = new WebContentsView({
     webPreferences: {
+      preload: path.join(__dirname, '../preload/site-preload.js'),
       nodeIntegration: false,
-      contextIsolation: true,
+      contextIsolation: false,
       sandbox: true,
       webviewTag: false,
     },
   });
   const site = siteView.webContents;
   const history = new SiteHistory();
+  const disposeFetchBridge = registerFetchBridge(site);
   window.contentView.addChildView(siteView);
 
   const resizeSiteView = () => {
@@ -193,6 +196,7 @@ const createWindow = async () => {
   window.on('closed', () => {
     nativeTheme.removeListener('updated', updateWindowTheme);
     ipcMain.removeListener('toolbar:command', onToolbarCommand);
+    disposeFetchBridge();
     site.close();
     mainWindow = null;
   });

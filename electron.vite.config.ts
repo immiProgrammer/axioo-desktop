@@ -29,9 +29,12 @@ export default defineConfig({
       sourcemap: true,
       externalizeDeps: false,
       rollupOptions: {
-        input: path.join(root, 'src/main/preload.ts'),
+        input: {
+          preload: path.join(root, 'src/main/preload.ts'),
+          'site-preload': path.join(root, 'src/main/site-preload.ts'),
+        },
         external,
-        output: { entryFileNames: 'preload.js' },
+        output: { entryFileNames: '[name].js' },
       },
     },
   },

@@ -225,6 +225,16 @@ async function main() {
       ),
     'site ready',
   );
+  assert.equal(await evaluate('typeof window.__axiooFetch'), 'function');
+  assert.equal(await evaluate('window.__AXIOO_DESKTOP__.version'), 1);
+  const bridged = await evaluate(
+    "__axiooFetch(location.origin + '/').then((response) => response.text().then((body) => ({ status: response.status, length: body.length })), (error) => ({ error: String(error) }))",
+  );
+  assert.ok(
+    typeof bridged.status === 'number' && bridged.status >= 100,
+    `Axioo fetch bridge did not return a response: ${JSON.stringify(bridged)}`,
+  );
+  assert.ok(bridged.length > 0, 'Axioo fetch bridge returned an empty body');
   const pageTitle = await evaluate('document.title');
   const expectedTitle = !pageTitle.trim()
     ? 'Axioo Store'

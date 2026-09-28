@@ -18,7 +18,7 @@
     "package": "npm run build && electron-builder build --publish never",
     "rebuild": "electron-rebuild --parallel --types prod,dev,optional --module-dir release/app",
     "start": "electron-vite dev --watch",
-    "test": "node -r ./.erb/scripts/register.cjs --test src/__tests__/navigation.test.cjs",
+    "test": "node -r ./.erb/scripts/register.cjs --test \"src/__tests__/*.test.cjs\"",
     "test:smoke": "node .erb/scripts/smoke-test.cjs",
     "preview": "electron-vite preview"
   },
