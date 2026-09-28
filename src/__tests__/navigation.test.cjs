@@ -25,7 +25,7 @@ test('only axioo.store and its HTTPS subdomains stay in the app', () => {
   assert.equal(getInternalUrl('file:///tmp/example'), null);
 });
 
-test('Google OAuth URLs stay in the app without broadening the Google allowlist', () => {
+test('Google account sign-in redirects stay in the app', () => {
   assert.equal(
     getInternalUrl('https://accounts.google.com/o/oauth2'),
     'https://accounts.google.com/o/oauth2',
@@ -37,10 +37,15 @@ test('Google OAuth URLs stay in the app without broadening the Google allowlist'
     'https://accounts.google.com/o/oauth2/v2/auth?client_id=abc',
   );
   assert.equal(
-    getInternalUrl('https://accounts.google.com/o/oauth2evil'),
-    null,
+    getInternalUrl(
+      'https://accounts.google.com/v3/signin/identifier?client_id=abc',
+    ),
+    'https://accounts.google.com/v3/signin/identifier?client_id=abc',
   );
-  assert.equal(getInternalUrl('https://accounts.google.com/signin/'), null);
+  assert.equal(
+    getInternalUrl('https://accounts.google.com/signin/oauth/legacy/consent'),
+    'https://accounts.google.com/signin/oauth/legacy/consent',
+  );
   assert.equal(getInternalUrl('http://accounts.google.com/o/oauth2'), null);
   assert.equal(
     getInternalUrl('https://accounts.google.com:444/o/oauth2'),
@@ -50,6 +55,7 @@ test('Google OAuth URLs stay in the app without broadening the Google allowlist'
     getInternalUrl('https://accounts.google.com.evil.test/o/oauth2'),
     null,
   );
+  assert.equal(getInternalUrl('https://mail.google.com/'), null);
   assert.equal(getStoreUrl('https://accounts.google.com/o/oauth2'), null);
 });
 

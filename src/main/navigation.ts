@@ -34,8 +34,7 @@ export function getInternalUrl(rawUrl: string): string | null {
     if (
       url.protocol === 'https:' &&
       url.hostname === 'accounts.google.com' &&
-      !url.port &&
-      (url.pathname === '/o/oauth2' || url.pathname.startsWith('/o/oauth2/'))
+      !url.port
     ) {
       return url.href;
     }
