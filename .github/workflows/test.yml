@@ -34,6 +34,7 @@ jobs:
           npm run package
           npm run lint
           npm exec tsc -- --noEmit
+          npm test
 
       - name: Verify Electron startup (Linux)
         if: runner.os == 'Linux'

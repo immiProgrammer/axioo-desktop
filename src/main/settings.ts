@@ -1,6 +1,8 @@
 import Store from 'electron-store';
 
-export type AppSettings = Record<string, unknown>;
+export type AppSettings = Record<string, unknown> & {
+  lastUrl?: string;
+};
 
 let settingsStore: Store<AppSettings> | undefined;
 

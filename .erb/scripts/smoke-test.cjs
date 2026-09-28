@@ -2,7 +2,6 @@ const assert = require('node:assert/strict');
 const { spawn, spawnSync } = require('node:child_process');
 const { setTimeout: delay } = require('node:timers/promises');
 
-const port = Number(process.env.SMOKE_PORT || 1213);
 const debugPort = Number(process.env.SMOKE_DEBUG_PORT || 9335);
 const windows = process.platform === 'win32';
 const child = spawn(
@@ -17,10 +16,7 @@ const child = spawn(
   {
     detached: !windows,
     shell: windows,
-    env: {
-      ...process.env,
-      PORT: String(port),
-    },
+    env: process.env,
     stdio: ['ignore', 'pipe', 'pipe'],
   },
 );
@@ -57,15 +53,23 @@ async function main() {
     try {
       const response = await fetch(`http://127.0.0.1:${debugPort}/json/list`);
       const targets = await response.json();
-      return targets.find(
-        (entry) =>
-          entry.type === 'page' &&
-          entry.url.startsWith(`http://localhost:${port}`),
-      );
+      return targets.find((entry) => {
+        if (entry.type !== 'page') return false;
+        try {
+          const url = new URL(entry.url);
+          return (
+            url.protocol === 'https:' &&
+            (url.hostname === 'axioo.store' ||
+              url.hostname.endsWith('.axioo.store'))
+          );
+        } catch {
+          return false;
+        }
+      });
     } catch {
       return null;
     }
-  }, 'Electron renderer');
+  }, 'Axioo Store window');
 
   socket = new WebSocket(target.webSocketDebuggerUrl);
   await new Promise((resolve, reject) => {
@@ -74,11 +78,8 @@ async function main() {
   });
   let id = 0;
   const requests = new Map();
-  const exceptions = [];
   socket.addEventListener('message', ({ data }) => {
     const message = JSON.parse(data);
-    if (message.method === 'Runtime.exceptionThrown')
-      exceptions.push(message.params);
     if (requests.has(message.id)) {
       requests.get(message.id)(message);
       requests.delete(message.id);
@@ -110,24 +111,9 @@ async function main() {
     return result.result.value;
   }
   await send('Runtime.enable');
-  await waitFor(
-    () =>
-      evaluate('document.querySelector("h1")?.textContent === "Axioo Desktop"'),
-    'home page',
-  );
-  assert.equal(
-    await evaluate('Boolean(document.querySelector("vite-error-overlay"))'),
-    false,
-  );
-  assert.equal(
-    await evaluate(
-      'new Promise((resolve) => { window.electron.ipcRenderer.once("ipc-example", resolve); window.electron.ipcRenderer.sendMessage("ipc-example", ["smoke-test"]); })',
-    ),
-    'IPC test: pong',
-  );
-  assert.deepEqual(exceptions, []);
+  assert.equal(await evaluate('typeof window.require'), 'undefined');
   console.log(
-    'Electron startup passed: window, preload IPC, and no renderer exceptions.',
+    'Electron startup passed: Axioo Store loaded without Node.js integration.',
   );
 }
 
