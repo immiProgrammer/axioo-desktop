@@ -53,3 +53,15 @@ jobs:
             gh release upload $tag axioo-install.bat --clobber
             Write-Host "Uploaded axioo-install.bat to release $tag successfully."
           }
+
+      - name: Publish draft release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+        shell: pwsh
+        run: |
+          $version = (Get-Content package.json | ConvertFrom-Json).version
+          $tag = "v$version"
+          Write-Host "Publishing release $tag (setting draft to false)..."
+          gh release edit $tag --draft=false --latest
+          Write-Host "Release $tag is now published."
