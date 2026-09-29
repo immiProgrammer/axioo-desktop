@@ -17,14 +17,14 @@ set "LATEST_TAG="
 set "SETUP_NAME="
 set "DOWNLOAD_URL="
 
-:: Check if a local setup executable already exists in the script's directory
+:: Check if an Axioo setup executable already exists in the script's directory
 for %%f in ("%~dp0Axioo-Desktop-Setup-*.exe") do (
     if exist "%%~ff" (
         set "LOCAL_SETUP=%%~ff"
         goto :CheckRemote
     )
 )
-for %%f in ("%~dp0*Setup*.exe") do (
+for %%f in ("%~dp0Axioo*Setup*.exe") do (
     if exist "%%~ff" (
         set "LOCAL_SETUP=%%~ff"
         goto :CheckRemote
@@ -39,8 +39,10 @@ for /f "usebackq tokens=*" %%i in (`powershell -NoProfile -ExecutionPolicy Bypas
     "$ErrorActionPreference = 'SilentlyContinue'; " ^
     "[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12; " ^
     "try { " ^
-    "    $r = Invoke-RestMethod -Uri 'https://api.github.com/repos/%REPO%/releases/latest' -Headers @{'User-Agent'='Axioo-Installer'}; " ^
-    "    $setup = $r.assets | Where-Object { $_.name -like '*Setup*.exe' } | Select-Object -First 1; " ^
+    "    $headers = @{'User-Agent'='Axioo-Installer'}; " ^
+    "    if ($env:GH_TOKEN) { $headers['Authorization'] = 'Bearer ' + $env:GH_TOKEN }; " ^
+    "    $r = Invoke-RestMethod -Uri 'https://api.github.com/repos/%REPO%/releases/latest' -Headers $headers; " ^
+    "    $setup = $r.assets | Where-Object { $_.name -like 'Axioo*Setup*.exe' } | Select-Object -First 1; " ^
     "    if ($setup) { Write-Output ('FOUND|' + $r.tag_name + '|' + $setup.name + '|' + $setup.browser_download_url) } else { Write-Output 'NONE' } " ^
     "} catch { Write-Output 'NONE' }"`) do (
     set "REMOTE_INFO=%%i"
@@ -80,13 +82,19 @@ if exist "%CACHE_DIR%\!SETUP_NAME!" (
 :: Download the latest installer
 echo [*] Downloading !SETUP_NAME!...
 set "INSTALLER_PATH=%CACHE_DIR%\!SETUP_NAME!"
-curl.exe -L --fail --progress-bar -o "!INSTALLER_PATH!" "!DOWNLOAD_URL!"
+if defined GH_TOKEN (
+    curl.exe -L --fail --progress-bar -H "Authorization: Bearer %GH_TOKEN%" -o "!INSTALLER_PATH!" "!DOWNLOAD_URL!"
+) else (
+    curl.exe -L --fail --progress-bar -o "!INSTALLER_PATH!" "!DOWNLOAD_URL!"
+)
 if errorlevel 1 (
     echo [!] curl download failed, attempting fallback download via PowerShell...
     powershell -NoProfile -ExecutionPolicy Bypass -Command ^
         "$ErrorActionPreference = 'Stop'; " ^
         "[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12; " ^
-        "(New-Object System.Net.WebClient).DownloadFile('!DOWNLOAD_URL!', '!INSTALLER_PATH!')"
+        "$wc = New-Object System.Net.WebClient; " ^
+        "if ($env:GH_TOKEN) { $wc.Headers.Add('Authorization', 'Bearer ' + $env:GH_TOKEN) }; " ^
+        "$wc.DownloadFile('!DOWNLOAD_URL!', '!INSTALLER_PATH!')"
     if errorlevel 1 (
         echo [x] Failed to download installer from GitHub Releases.
         goto :HandleMissingInstaller
@@ -105,8 +113,8 @@ if defined LOCAL_SETUP (
 echo.
 echo [x] Error: Could not find or download the Axioo Desktop setup installer.
 echo     - Repository: https://github.com/%REPO%
-echo     - No release with a setup installer has been published yet.
-echo     - Please ensure you have an active internet connection or download the installer directly.
+echo     - Note: If this repository is private, make it public or set the GH_TOKEN environment variable.
+echo     - Check release status at: https://github.com/%REPO%/releases
 echo.
 pause
 exit /b 1
