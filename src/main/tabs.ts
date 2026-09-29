@@ -1,9 +1,10 @@
 import path from 'node:path';
-import { ipcMain, shell, WebContentsView } from 'electron';
+import { clipboard, ipcMain, Menu, shell, WebContentsView } from 'electron';
 import type { BrowserWindow, IpcMainEvent, WebContents } from 'electron';
 import log from 'electron-log';
 import type { FetchBridge } from './fetch-bridge';
 import { SiteHistory } from './history';
+import { buildLinkMenuTemplate } from './link-menu';
 import { CONTENT_TOP } from './layout';
 import {
   HOME_URL,
@@ -336,6 +337,9 @@ export class TabManager {
       if (input.type !== 'keyDown') return;
       if (this.handleShortcut(input, site)) event.preventDefault();
     });
+    site.on('context-menu', (_event, params) => {
+      this.showLinkMenu(params.linkURL);
+    });
     site.setWindowOpenHandler(({ url }) => {
       const internalUrl = getInternalUrl(url);
       setImmediate(() => {
@@ -413,6 +417,17 @@ export class TabManager {
       return true;
     }
     return false;
+  }
+
+  private showLinkMenu(linkURL: string) {
+    const link = linkURL.trim();
+    const template = buildLinkMenuTemplate(link, {
+      openInNewTab: () => this.createTab(link),
+      openLink: () => this.openExternal(link),
+      copyLink: () => clipboard.writeText(link),
+    });
+    if (!template.length) return;
+    Menu.buildFromTemplate(template).popup({ window: this.window });
   }
 
   private reloadSite(site: WebContents, hard: boolean) {
