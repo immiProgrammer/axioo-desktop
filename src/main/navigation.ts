@@ -52,19 +52,6 @@ export function getRestorableStoreUrl(
   return storeUrl;
 }
 
-export function isGoogleAuthUrl(rawUrl: string): boolean {
-  try {
-    const url = new URL(rawUrl);
-    return (
-      url.protocol === 'https:' &&
-      url.hostname === 'accounts.google.com' &&
-      !url.port
-    );
-  } catch {
-    return false;
-  }
-}
-
 export function getStoreUrl(
   rawUrl: string,
   baseUrl: string = HOME_URL,
@@ -74,8 +61,19 @@ export function getStoreUrl(
     if (url.protocol !== 'https:' && url.protocol !== 'http:') return null;
 
     const base = new URL(baseUrl);
-    if (isProductionHost(base.hostname)) {
+    const productionBase =
+      base.protocol === 'https:' &&
+      base.hostname === PRODUCTION_HOST &&
+      !base.port;
+    if (productionBase) {
       if (!isProductionHost(url.hostname) || url.port) return null;
+    } else if (isProductionHost(base.hostname)) {
+      if (
+        (url.hostname !== base.hostname &&
+          !url.hostname.endsWith(`.${base.hostname}`)) ||
+        url.port !== base.port
+      )
+        return null;
     } else if (!isSameStoreHost(url.hostname, base.hostname)) {
       return null;
     }

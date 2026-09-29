@@ -3,10 +3,9 @@ import { ipcRenderer } from 'electron';
 const FETCH_CHANNEL = 'axioo:fetch';
 const ABORT_CHANNEL = 'axioo:fetch:abort';
 const INTERNAL_URL_CHANNEL = 'axioo:internal-url';
-const DESKTOP_START_CHANNEL = 'desktop-login:start';
-const DESKTOP_TAKE_CHANNEL = 'desktop-login:take';
-const DESKTOP_FINISH_CHANNEL = 'desktop-login:finish';
-const BRIDGE_VERSION = 1;
+const DESKTOP_OPEN_CHANNEL = 'desktop:open-external';
+const DESKTOP_EVENT_CHANNEL = 'desktop:event';
+const BRIDGE_VERSION = 2;
 const NULL_BODY_STATUS = new Set([101, 103, 204, 205, 304]);
 const BODYLESS_METHODS = new Set(['GET', 'HEAD']);
 
@@ -29,6 +28,18 @@ type BridgeResponse = {
   bodyBase64: string;
 };
 
+type DesktopEvent = {
+  id: string;
+  type: 'deep-link';
+  url: string;
+  openedUrl: string | null;
+};
+
+type DesktopCommand =
+  | { type: 'ready' }
+  | { type: 'event-handled'; id: string }
+  | { type: 'clear-return' };
+
 declare global {
   interface Window {
     __axiooFetch: (
@@ -38,13 +49,12 @@ declare global {
     __AXIOO_DESKTOP__: {
       version: number;
       fetch: Window['__axiooFetch'];
-      startGoogleLogin: (callbackUrl: string) => Promise<{ opened: boolean }>;
-      takeDesktopLogin: () => Promise<{
-        userId: string;
-        token: string;
-        attempt: string;
-      } | null>;
-      finishDesktopLogin: (attempt: string) => void;
+      openExternal: (
+        url: string,
+        ask?: boolean,
+      ) => Promise<'opened' | 'copied' | 'cancelled' | 'failed'>;
+      onEvent: (handler: (event: DesktopEvent) => void) => () => void;
+      sendEvent: (command: DesktopCommand) => void;
     };
   }
 }
@@ -243,6 +253,11 @@ const isStorePage = () => {
 };
 
 if (isStorePage()) {
+  const eventListeners = new Set<(event: DesktopEvent) => void>();
+  ipcRenderer.on(DESKTOP_EVENT_CHANNEL, (_event, payload: DesktopEvent) => {
+    if (payload?.type !== 'deep-link') return;
+    for (const listener of eventListeners) listener(payload);
+  });
   Object.defineProperty(window, '__axiooFetch', {
     value: axiooFetch,
     writable: true,
@@ -252,11 +267,14 @@ if (isStorePage()) {
     value: {
       version: BRIDGE_VERSION,
       fetch: axiooFetch,
-      startGoogleLogin: (callbackUrl: string) =>
-        ipcRenderer.invoke(DESKTOP_START_CHANNEL, callbackUrl),
-      takeDesktopLogin: () => ipcRenderer.invoke(DESKTOP_TAKE_CHANNEL),
-      finishDesktopLogin: (attempt: string) =>
-        ipcRenderer.send(DESKTOP_FINISH_CHANNEL, attempt),
+      openExternal: (url: string, ask = true) =>
+        ipcRenderer.invoke(DESKTOP_OPEN_CHANNEL, url, ask),
+      onEvent: (handler: (event: DesktopEvent) => void) => {
+        eventListeners.add(handler);
+        return () => eventListeners.delete(handler);
+      },
+      sendEvent: (command: DesktopCommand) =>
+        ipcRenderer.send(DESKTOP_EVENT_CHANNEL, command),
     },
     writable: false,
     configurable: false,

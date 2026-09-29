@@ -19,7 +19,6 @@ import {
   getExternalUrl,
   getInternalUrl,
   getRestorableStoreUrl,
-  isGoogleAuthUrl,
   getSessionTabs,
   getStartupUrl,
 } from './navigation';
@@ -76,7 +75,6 @@ export class TabManager {
   private recentlyClosed: string[] = [];
 
   private disposed = false;
-  private readonly onGoogleSignIn: (sourceUrl: string) => void;
 
   private readonly persist = createDebouncedSave<PersistedTabs>(
     (state) => {
@@ -88,14 +86,9 @@ export class TabManager {
     5_000,
   );
 
-  constructor(
-    window: BrowserWindow,
-    fetchBridge: FetchBridge,
-    onGoogleSignIn: (sourceUrl: string) => void,
-  ) {
+  constructor(window: BrowserWindow, fetchBridge: FetchBridge) {
     this.window = window;
     this.fetchBridge = fetchBridge;
-    this.onGoogleSignIn = onGoogleSignIn;
     ipcMain.on(TAB_COMMAND_CHANNEL, this.onTabCommand);
     this.window.on('resize', this.layout);
     this.window.on('enter-full-screen', this.onFullScreenChange);
@@ -103,6 +96,9 @@ export class TabManager {
     this.window.on('close', this.flush);
     this.window.on('closed', this.dispose);
     app.on('before-quit', this.flush);
+  }
+
+  start() {
     this.restore();
   }
 
@@ -373,10 +369,6 @@ export class TabManager {
       this.showLinkMenu(params.linkURL);
     });
     site.setWindowOpenHandler(({ url }) => {
-      if (isGoogleAuthUrl(url)) {
-        this.onGoogleSignIn(site.getURL());
-        return { action: 'deny' };
-      }
       const internalUrl = getInternalUrl(url);
       setImmediate(() => {
         if (this.disposed) return;
@@ -392,11 +384,6 @@ export class TabManager {
     url: string,
     site: WebContents,
   ) {
-    if (isGoogleAuthUrl(url)) {
-      event.preventDefault();
-      this.onGoogleSignIn(site.getURL());
-      return;
-    }
     const internalUrl = getInternalUrl(url);
     if (internalUrl === url) return;
 

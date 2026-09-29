@@ -15,13 +15,13 @@
 
 @media (prefers-color-scheme: dark) {
   :root {
-    --titlebar-background: #2c2c2c;
+    --titlebar-background: #171717;
     --titlebar-foreground: #f0f2f5;
     --titlebar-border: #383b40;
     --titlebar-hover: #36393e;
-    --tab-active: #3e4249;
+    --tab-active: #262626;
     --tab-inactive: #232529;
-    --tab-inactive-hover: #3e4249;
+    --tab-inactive-hover: #262626;
     --tab-close-tint: rgb(255 255 255 / 15%);
   }
 }

@@ -10,7 +10,6 @@ const {
   getExternalUrl,
   getInternalUrl,
   getRestorableStoreUrl,
-  isGoogleAuthUrl,
   getStoreUrl,
   getStartupUrl,
   HOME_URL,
@@ -53,21 +52,47 @@ test('a dev base URL only keeps its own host and ports inside the app', () => {
   assert.equal(getStartupUrl('http://localhost:3000/cart', dev), dev + 'cart');
   assert.equal(getStartupUrl('https://axioo.store/cart', dev), dev);
   assert.equal(getStartupUrl(undefined, dev), dev);
-  assert.equal(getInternalUrl('https://accounts.google.com/o/oauth2', dev), null);
+  assert.equal(
+    getInternalUrl('https://accounts.google.com/o/oauth2', dev),
+    null,
+  );
 });
 
-test('Google authorization redirects are intercepted for browser sign-in', () => {
-  assert.equal(isGoogleAuthUrl('https://accounts.google.com/o/oauth2/v2/auth'), true);
-  assert.equal(getInternalUrl('https://accounts.google.com/o/oauth2/v2/auth'), null);
-  assert.equal(isGoogleAuthUrl('http://accounts.google.com/o/oauth2'), false);
-  assert.equal(isGoogleAuthUrl('https://accounts.google.com.evil.test/'), false);
-  assert.equal(isGoogleAuthUrl('https://mail.google.com/'), false);
+test('a dev.axioo.store base keeps its configured port and tenant hosts', () => {
+  const dev = 'http://dev.axioo.store:3000/';
+  assert.equal(getInternalUrl(dev, dev), dev);
+  assert.equal(
+    getInternalUrl('http://shop.dev.axioo.store:3000/sign-in', dev),
+    'http://shop.dev.axioo.store:3000/sign-in',
+  );
+  assert.equal(
+    getInternalUrl('https://dev.axioo.store:3000/sign-in', dev),
+    dev + 'sign-in',
+  );
+  assert.equal(getInternalUrl('http://dev.axioo.store/sign-in', dev), null);
+  assert.equal(
+    getInternalUrl('http://dev.axioo.store:4000/sign-in', dev),
+    null,
+  );
+  assert.equal(getInternalUrl('https://axioo.store/sign-in', dev), null);
+  assert.equal(getInternalUrl('https://dev.axioo.store.evil.test/', dev), null);
 });
 
 test('handoff URLs are never restored on startup', () => {
-  assert.equal(getRestorableStoreUrl('https://axioo.store/desktop-login?token=secret'), null);
-  assert.equal(getRestorableStoreUrl('https://axioo.store/api/auth/callback/google?code=secret'), null);
-  assert.equal(getStartupUrl('https://axioo.store/desktop-login?token=secret'), HOME_URL);
+  assert.equal(
+    getRestorableStoreUrl('https://axioo.store/desktop-login?token=secret'),
+    null,
+  );
+  assert.equal(
+    getRestorableStoreUrl(
+      'https://axioo.store/api/auth/callback/google?code=secret',
+    ),
+    null,
+  );
+  assert.equal(
+    getStartupUrl('https://axioo.store/desktop-login?token=secret'),
+    HOME_URL,
+  );
 });
 
 test('invalid or external saved URLs start at the Axioo home page', () => {

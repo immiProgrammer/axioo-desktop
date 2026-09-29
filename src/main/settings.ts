@@ -4,9 +4,8 @@ import type { SessionTabs } from './navigation';
 export type AppSettings = Record<string, unknown> & {
   lastUrl?: string;
   tabs?: SessionTabs;
-  desktopLogin?: {
-    attempt: string;
-    callbackUrl: string;
+  externalReturn?: {
+    url: string;
     expiresAt: number;
   };
 };

@@ -68,7 +68,7 @@ const updateIcon =
   '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M21 12a9 9 0 1 1-2.64-6.36L21 8M21 3v5h-5"/></svg>';
 const theme = window.matchMedia('(prefers-color-scheme: dark)');
 const titlebarBackground = () =>
-  TitlebarColor.fromHex(theme.matches ? '#2c2c2c' : '#f6f8fb');
+  TitlebarColor.fromHex(theme.matches ? '#171717' : '#f6f8fb');
 
 void createTitlebarOnDOMContentLoaded({
   backgroundColor: titlebarBackground(),
