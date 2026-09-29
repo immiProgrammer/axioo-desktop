@@ -43,6 +43,7 @@ jobs:
       - name: Upload axioo-install.bat to release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
         shell: pwsh
         run: |
           $version = (Get-Content package.json | ConvertFrom-Json).version
