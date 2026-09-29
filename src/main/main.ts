@@ -15,6 +15,9 @@ import startAutoUpdates from './updates';
 
 const MIN_WINDOW_WIDTH = 640;
 const MIN_WINDOW_HEIGHT = 400;
+// Only present in the repo: a packaged build takes its icon from the
+// executable, so the window option is skipped there.
+const DEV_ICON = path.join(__dirname, '../../assets/icon.png');
 let mainWindow: BrowserWindow | null = null;
 
 if (process.env.NODE_ENV === 'production') {
@@ -44,6 +47,7 @@ const createWindow = async () => {
     height: windowState.height,
     minWidth: MIN_WINDOW_WIDTH,
     minHeight: MIN_WINDOW_HEIGHT,
+    ...(app.isPackaged ? {} : { icon: DEV_ICON }),
     titleBarStyle: 'hidden',
     ...(process.platform === 'win32'
       ? {
