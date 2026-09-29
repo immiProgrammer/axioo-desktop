@@ -27,7 +27,6 @@ body {
 .cet-titlebar.cet-freebsd {
   height: 32px !important;
   line-height: 32px !important;
-  border-bottom: 1px solid var(--titlebar-border);
 }
 
 .cet-titlebar .cet-title,
