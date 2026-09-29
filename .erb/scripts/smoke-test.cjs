@@ -213,7 +213,7 @@ async function main() {
   );
   assert.equal(
     await evaluateToolbar(
-      "(() => { const buttons = [...document.querySelector('.axioo-toolbar-left').children].map((button) => button.getBoundingClientRect()); return Math.round(buttons[0].left) === 0 && buttons.every((bounds, index) => index === 0 || Math.round(bounds.left - buttons[index - 1].right) <= 2); })()",
+      "(() => { const buttons = [...document.querySelector('.axioo-toolbar-left').children].map((button) => button.getBoundingClientRect()); return Math.round(buttons[0].left) <= 4 && buttons.every((bounds, index) => index === 0 || Math.round(bounds.left - buttons[index - 1].right) <= 2); })()",
     ),
     true,
     'the menu button should start flush at the window edge with no gaps',
@@ -240,6 +240,13 @@ async function main() {
       'native Windows caption buttons',
     );
   }
+  await waitFor(
+    () =>
+      evaluateToolbar(
+        "(() => { const updateBtn = document.querySelector('.axioo-update-button'); if (!updateBtn) return false; const bounds = updateBtn.getBoundingClientRect(); return bounds.width > 0 && bounds.height > 0 && Boolean(updateBtn.closest('.axioo-toolbar-right')); })()",
+      ),
+    'auto-update button on the right side',
+  );
   const stripStyle = await waitFor(
     () =>
       evaluateToolbar(

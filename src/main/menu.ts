@@ -16,14 +16,18 @@ export default class MenuBuilder {
 
   onDataCleared?: () => void;
 
+  onCheckForUpdates?: () => void;
+
   constructor(
     mainWindow: BrowserWindow,
     getSiteContents: () => WebContents | null,
     onDataCleared?: () => void,
+    onCheckForUpdates?: () => void,
   ) {
     this.mainWindow = mainWindow;
     this.getSiteContents = getSiteContents;
     this.onDataCleared = onDataCleared;
+    this.onCheckForUpdates = onCheckForUpdates;
   }
 
   buildMenu(): Menu {
@@ -151,6 +155,15 @@ export default class MenuBuilder {
       label: 'Help',
       submenu: [
         {
+          label: 'Check for Updates...',
+          click: () => {
+            if (this.onCheckForUpdates) {
+              this.onCheckForUpdates();
+            }
+          },
+        },
+        { type: 'separator' },
+        {
           label: 'Learn More',
           click() {
             shell.openExternal('https://electronjs.org');
@@ -234,6 +247,15 @@ export default class MenuBuilder {
       {
         label: 'Help',
         submenu: [
+          {
+            label: 'Check for Updates...',
+            click: () => {
+              if (this.onCheckForUpdates) {
+                this.onCheckForUpdates();
+              }
+            },
+          },
+          { type: 'separator' },
           {
             label: 'Learn More',
             click() {

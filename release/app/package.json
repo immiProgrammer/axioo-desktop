@@ -3,6 +3,11 @@
   "version": "0.1.0",
   "description": "A simple Electron desktop app",
   "license": "MIT",
+  "author": "Axioo <support@axioo.store>",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/immiProgrammer/axioo-desktop.git"
+  },
   "main": "./dist/main/main.js",
   "scripts": {
     "rebuild": "node -r ../../.erb/scripts/register.cjs ../../.erb/scripts/electron-rebuild.js",

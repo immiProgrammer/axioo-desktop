@@ -9,6 +9,14 @@
     "vite"
   ],
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/immiProgrammer/axioo-desktop.git"
+  },
+  "author": {
+    "name": "Axioo",
+    "url": "https://axioo.store"
+  },
   "main": "./release/app/dist/main/main.js",
   "scripts": {
     "build": "electron-vite build",
@@ -79,6 +87,12 @@
       "node_modules",
       "package.json"
     ],
+    "publish": {
+      "provider": "github",
+      "owner": "immiProgrammer",
+      "repo": "axioo-desktop",
+      "releaseType": "release"
+    },
     "mac": {
       "notarize": false,
       "target": {
@@ -111,9 +125,36 @@
     },
     "win": {
       "target": [
-        "nsis"
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        },
+        {
+          "target": "portable",
+          "arch": [
+            "x64"
+          ]
+        },
+        {
+          "target": "zip",
+          "arch": [
+            "x64"
+          ]
+        }
       ],
-      "icon": "assets/icon.ico"
+      "icon": "assets/icon.ico",
+      "artifactName": "Axioo-Desktop-${version}-win-${arch}.${ext}"
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "artifactName": "Axioo-Desktop-Setup-${version}.${ext}"
+    },
+    "portable": {
+      "artifactName": "Axioo-Desktop-${version}-portable.${ext}"
     },
     "linux": {
       "target": [

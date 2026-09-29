@@ -1,47 +1,55 @@
-name: Publish
+name: Release
 
 on:
   push:
     branches:
       - main
+  workflow_dispatch:
+
+permissions:
+  contents: write
 
 jobs:
   publish:
-    # To enable auto publishing to github, update your electron publisher
-    # config in package.json > "build" and remove the conditional below
-    if: ${{ github.repository_owner == 'electron-react-boilerplate' }}
-
-    runs-on: ${{ matrix.os }}
-
-    strategy:
-      matrix:
-        os: [macos-latest]
+    name: Build & Release Windows
+    runs-on: windows-latest
 
     steps:
-      - name: Checkout git repo
-        uses: actions/checkout@v7.0.1
+      - name: Check out Git repository
+        uses: actions/checkout@v4
 
-      - name: Install Node and NPM
-        uses: actions/setup-node@v7.0.0
+      - name: Install Node.js and NPM
+        uses: actions/setup-node@v4
         with:
           node-version: 24
           cache: npm
 
-      - name: Install and build
+      - name: Install dependencies
         run: |
-          npm install
-          npm run postinstall
+          npm ci
+
+      - name: Build application
+        run: |
           npm run build
 
-      - name: Publish releases
+      - name: Publish Windows release
         env:
-          # The APPLE_* values are used for auto updates signing
-          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_ID_PASS }}
-          APPLE_ID: ${{ secrets.APPLE_ID }}
-          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
-          CSC_LINK: ${{ secrets.CSC_LINK }}
-          CSC_KEY_PASSWORD: ${{ secrets.CSC_KEY_PASSWORD }}
-          # This is used for uploading release assets to github
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          WIN_CSC_LINK: ${{ secrets.WIN_CSC_LINK }}
+          WIN_CSC_KEY_PASSWORD: ${{ secrets.WIN_CSC_KEY_PASSWORD }}
         run: |
-          npm exec electron-builder -- --publish always --win --mac --linux
+          npx electron-builder --win --publish always
+
+      - name: Upload axioo-install.bat to release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+        shell: pwsh
+        run: |
+          $version = (Get-Content package.json | ConvertFrom-Json).version
+          $tag = "v$version"
+          Write-Host "Attaching axioo-install.bat to release $tag..."
+          if (Test-Path "axioo-install.bat") {
+            gh release upload $tag axioo-install.bat --clobber
+            Write-Host "Uploaded axioo-install.bat to release $tag successfully."
+          }

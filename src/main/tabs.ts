@@ -132,10 +132,10 @@ export class TabManager {
     if (this.window.webContents.isDestroyed()) return;
     this.window.webContents.send(LAYOUT_CHANNEL, {
       tabStripVisible: !this.window.isFullScreen(),
-      // Three native caption buttons on Windows own the right edge of the
-      // caption; the tab strip keeps the same inset so tabs never sit under
-      // them.
-      rightInset: process.platform === 'win32' ? 138 : 0,
+      // On Windows, native caption buttons occupy 138px and the auto-update
+      // button occupies 34px directly next to minimize, giving 172px inset.
+      // On other platforms, the update button sits at the right edge with 36px inset.
+      rightInset: process.platform === 'win32' ? 172 : 36,
     });
   };
 
