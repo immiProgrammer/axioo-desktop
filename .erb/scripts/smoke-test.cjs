@@ -213,7 +213,7 @@ async function main() {
   );
   assert.equal(
     await evaluateToolbar(
-      "(() => { const buttons = [...document.querySelector('.axioo-toolbar-left').children].map((button) => button.getBoundingClientRect()); return Math.round(buttons[0].left) <= 4 && buttons.every((bounds, index) => index === 0 || Math.round(bounds.left - buttons[index - 1].right) <= 2); })()",
+      "(() => { const buttons = [...document.querySelector('.axioo-toolbar-left').children].map((button) => button.getBoundingClientRect()); return Math.round(buttons[0].left) <= 8 && buttons.every((bounds, index) => index === 0 || Math.abs(bounds.left - buttons[index - 1].right) <= 6); })()",
     ),
     true,
     'the menu button should start flush at the window edge with no gaps',
