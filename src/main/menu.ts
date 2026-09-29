@@ -8,6 +8,7 @@ import {
   session,
 } from 'electron';
 import log from 'electron-log';
+import { HOME_URL } from './navigation';
 
 export default class MenuBuilder {
   mainWindow: BrowserWindow;
@@ -153,43 +154,7 @@ export default class MenuBuilder {
     };
     const subMenuHelp: MenuItemConstructorOptions = {
       label: 'Help',
-      submenu: [
-        {
-          label: 'Check for Updates...',
-          click: () => {
-            if (this.onCheckForUpdates) {
-              this.onCheckForUpdates();
-            }
-          },
-        },
-        { type: 'separator' },
-        {
-          label: 'Learn More',
-          click() {
-            shell.openExternal('https://electronjs.org');
-          },
-        },
-        {
-          label: 'Documentation',
-          click() {
-            shell.openExternal(
-              'https://github.com/electron/electron/tree/main/docs#readme',
-            );
-          },
-        },
-        {
-          label: 'Community Discussions',
-          click() {
-            shell.openExternal('https://www.electronjs.org/community');
-          },
-        },
-        {
-          label: 'Search Issues',
-          click() {
-            shell.openExternal('https://github.com/electron/electron/issues');
-          },
-        },
-      ],
+      submenu: this.buildHelpTemplate(),
     };
 
     return [
@@ -223,6 +188,26 @@ export default class MenuBuilder {
     ];
   }
 
+  buildHelpTemplate(): MenuItemConstructorOptions[] {
+    return [
+      {
+        label: 'Check for Updates...',
+        click: () => {
+          if (this.onCheckForUpdates) {
+            this.onCheckForUpdates();
+          }
+        },
+      },
+      { type: 'separator' },
+      {
+        label: 'Axioo Website',
+        click() {
+          shell.openExternal(HOME_URL);
+        },
+      },
+    ];
+  }
+
   buildDefaultTemplate(): MenuItemConstructorOptions[] {
     const templateDefault: MenuItemConstructorOptions[] = [
       {
@@ -246,43 +231,7 @@ export default class MenuBuilder {
       },
       {
         label: 'Help',
-        submenu: [
-          {
-            label: 'Check for Updates...',
-            click: () => {
-              if (this.onCheckForUpdates) {
-                this.onCheckForUpdates();
-              }
-            },
-          },
-          { type: 'separator' },
-          {
-            label: 'Learn More',
-            click() {
-              shell.openExternal('https://electronjs.org');
-            },
-          },
-          {
-            label: 'Documentation',
-            click() {
-              shell.openExternal(
-                'https://github.com/electron/electron/tree/main/docs#readme',
-              );
-            },
-          },
-          {
-            label: 'Community Discussions',
-            click() {
-              shell.openExternal('https://www.electronjs.org/community');
-            },
-          },
-          {
-            label: 'Search Issues',
-            click() {
-              shell.openExternal('https://github.com/electron/electron/issues');
-            },
-          },
-        ],
+        submenu: this.buildHelpTemplate(),
       },
     ];
 

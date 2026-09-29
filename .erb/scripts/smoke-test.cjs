@@ -211,19 +211,19 @@ async function main() {
       'axioo-toolbar-button axioo-forward-button',
     ],
   );
-  assert.equal(
-    await evaluateToolbar(
-      "(() => { const buttons = [...document.querySelector('.axioo-toolbar-left').children].map((button) => button.getBoundingClientRect()); return Math.round(buttons[0].left) <= 8 && buttons.every((bounds, index) => index === 0 || Math.abs(bounds.left - buttons[index - 1].right) <= 6); })()",
-    ),
-    true,
-    'the menu button should start flush at the window edge with no gaps',
-  );
   await waitFor(
     () =>
       evaluateToolbar(
         "(() => { const button = document.querySelector('.axioo-menu-button'); const icon = button?.querySelector('.axioo-menu-icon'); if (!button || !icon) return false; const style = getComputedStyle(icon); const mask = style.maskImage || style.webkitMaskImage; return button.getAttribute('aria-label') === 'Open menu' && mask && mask !== 'none' && Math.round(icon.getBoundingClientRect().width) === 22; })()",
       ),
     'menu button icon',
+  );
+  await waitFor(
+    () =>
+      evaluateToolbar(
+        "(() => { const buttons = [...document.querySelector('.axioo-toolbar-left').children].map((button) => button.getBoundingClientRect()); return buttons.length === 3 && Math.round(buttons[0].left) <= 8 && buttons.every((bounds, index) => index === 0 || Math.abs(bounds.left - buttons[index - 1].right) <= 6); })()",
+      ),
+    'the menu button should start flush at the window edge with no gaps',
   );
   assert.equal(
     await evaluateToolbar(
