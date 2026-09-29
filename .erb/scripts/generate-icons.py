@@ -33,7 +33,7 @@ TILE_BACKGROUND = (0x16, 0x23, 0x2E, 255)
 RASTER = 2048  # render size of the mark before it is trimmed
 KEY_COLOR = (0x00, 0xFF, 0x00)  # flat field Chromium renders the mark on
 CORNER_RATIO = 0.2  # rounded-rect corner radius, as a share of the tile
-MARK_RATIO = 0.72  # longest mark edge, as a share of the tile
+MARK_RATIO = 0.75  # longest mark edge, as a share of the tile
 
 LADDER = (16, 24, 32, 48, 64, 96, 128, 256, 512, 1024)
 ICO_SIZES = (16, 24, 32, 48, 64, 128, 256)

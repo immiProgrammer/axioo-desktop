@@ -72,6 +72,7 @@ body {
 .axioo-toolbar-button {
   width: 28px;
   height: 28px;
+  padding: 0;
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -83,8 +84,12 @@ body {
   -webkit-app-region: no-drag;
 }
 
-.axioo-toolbar-button:hover:not(:disabled) {
+/* .axioo-toolbar-button:hover:not(:disabled) {
   background: var(--titlebar-hover);
+} */
+
+.axioo-menu-button {
+  margin-right: -6px;
 }
 
 /* The app icon pops a native menu, which keeps the pointer "over" the button
@@ -114,9 +119,12 @@ body {
 }
 
 .axioo-menu-icon {
-  width: 24px;
-  height: 24px;
-  object-fit: contain;
+  width: 22px;
+  height: 22px;
+  flex-shrink: 0;
+  background-color: currentColor;
+  -webkit-mask: url('./axioo-mark.svg') center / contain no-repeat;
+  mask: url('./axioo-mark.svg') center / contain no-repeat;
   display: block;
   pointer-events: none;
 }

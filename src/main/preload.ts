@@ -64,10 +64,9 @@ void createTitlebarOnDOMContentLoaded({
   forward.disabled = true;
   // The app icon doubles as the menu affordance, so no hamburger glyph.
   const menu = makeButton('Open menu', '', 'axioo-menu-button');
-  const menuIcon = document.createElement('img');
+  const menuIcon = document.createElement('span');
   menuIcon.className = 'axioo-menu-icon';
-  menuIcon.alt = '';
-  menuIcon.src = new URL('./axioo-icon.png', window.location.href).href;
+  menuIcon.setAttribute('aria-hidden', 'true');
   menu.append(menuIcon);
   left.append(menu, back, forward);
   titlebar.titlebarElement.append(left);
