@@ -16,8 +16,10 @@ const siteUrl = (() => {
   }
 })();
 const siteIsProduction =
-  siteUrl.hostname === 'axioo.store' ||
-  siteUrl.hostname.endsWith('.axioo.store');
+  (siteUrl.hostname === 'axioo.store' ||
+    siteUrl.hostname.endsWith('.axioo.store')) &&
+  siteUrl.protocol === 'https:' &&
+  !siteUrl.port;
 const matchesSite = (rawUrl) => {
   let url;
   try {
@@ -25,11 +27,18 @@ const matchesSite = (rawUrl) => {
   } catch {
     return false;
   }
-  return siteIsProduction
-    ? url.protocol === 'https:' &&
-        (url.hostname === siteUrl.hostname ||
-          url.hostname.endsWith(`.${siteUrl.hostname}`))
-    : url.origin === siteUrl.origin;
+  if (siteIsProduction) {
+    return (
+      url.protocol === 'https:' &&
+      (url.hostname === 'axioo.store' || url.hostname.endsWith('.axioo.store'))
+    );
+  }
+  return (
+    url.protocol === siteUrl.protocol &&
+    url.port === siteUrl.port &&
+    (url.hostname === siteUrl.hostname ||
+      url.hostname.endsWith(`.${siteUrl.hostname}`))
+  );
 };
 
 const debugPort = Number(process.env.SMOKE_DEBUG_PORT || 9335);
@@ -300,7 +309,7 @@ async function main() {
     'site ready',
   );
   assert.equal(await evaluate('typeof window.__axiooFetch'), 'function');
-  assert.equal(await evaluate('window.__AXIOO_DESKTOP__.version'), 1);
+  assert.equal(await evaluate('window.__AXIOO_DESKTOP__.version'), 2);
   const bridged = await evaluate(
     "__axiooFetch(location.origin + '/').then((response) => response.text().then((body) => ({ status: response.status, length: body.length })), (error) => ({ error: String(error) }))",
   );
@@ -538,7 +547,7 @@ async function main() {
   assert.equal(secondBridge.hasApi, true);
   assert.equal(
     await second.evaluatePage('window.__AXIOO_DESKTOP__.version'),
-    1,
+    2,
   );
   const expectedTabTitle = pageTitle.trim() || 'Axioo Store';
   await waitFor(
