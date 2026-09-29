@@ -474,10 +474,7 @@ async function main() {
     '1',
     'the close button should paint above the fade',
   );
-  assert.ok(
-    Number(fade.activeTitle) < 1,
-    'the active tab title should be softened',
-  );
+  assert.equal(fade.activeTitle, '1', 'the active tab title should stay opaque');
   assert.equal(fade.idleOpacity, '0', 'an idle tab should hide the fade');
   assert.equal(fade.idleTitle, '1', 'an idle tab title should be fully opaque');
   await command(toolbarSocket, 'DOM.enable');
@@ -495,10 +492,10 @@ async function main() {
   });
   assert.equal(
     await evaluateToolbar(
-      "(() => { const idle = document.querySelector('.axioo-tab:not(.axioo-tab-active)'); return Number(getComputedStyle(idle, '::after').opacity) === 1 && Number(getComputedStyle(idle.querySelector('.axioo-tab-title')).opacity) < 1 && Number(getComputedStyle(idle.querySelector('.axioo-tab-close')).opacity) > 0; })()",
+      "(() => { const idle = document.querySelector('.axioo-tab:not(.axioo-tab-active)'); const title = getComputedStyle(idle.querySelector('.axioo-tab-title')); const masked = title.maskImage !== 'none' || title.webkitMaskImage !== 'none'; return Number(getComputedStyle(idle, '::after').opacity) === 1 && masked && Number(getComputedStyle(idle.querySelector('.axioo-tab-close')).opacity) > 0; })()",
     ),
     true,
-    'hovering an idle tab should reveal the fade, soften the title and show the close button',
+    'hovering an idle tab should reveal the fade, mask the title and show the close button',
   );
   await command(toolbarSocket, 'CSS.forcePseudoState', {
     nodeId: idleTabNode.nodeId,
@@ -661,6 +658,29 @@ async function main() {
     'return to the starting URL',
     10_000,
   );
+
+  // A middle press must close the tab and never become an auto-scroll gesture
+  // on the overflowing tab list.
+  const middleClick = await evaluateToolbar(
+    "(() => { const tab = document.querySelector('.axioo-tab'); const init = { bubbles: true, cancelable: true, button: 1 }; const press = tab.dispatchEvent(new MouseEvent('mousedown', init)); const release = tab.dispatchEvent(new MouseEvent('auxclick', init)); return { pressPrevented: press === false, releasePrevented: release === false, listPrevented: document.querySelector('.axioo-tab-list').dispatchEvent(new MouseEvent('mousedown', init)) === false }; })()",
+  );
+  assert.equal(middleClick.pressPrevented, true, 'middle press should be default-prevented');
+  assert.equal(
+    middleClick.listPrevented,
+    true,
+    'the tab list should not start scrolling on a middle press',
+  );
+  assert.equal(
+    middleClick.releasePrevented,
+    true,
+    'the closing auxclick should be default-prevented',
+  );
+  await waitFor(
+    async () => (await tabCount()) === 1 && (await tabIds())[0] !== originalId,
+    'middle click closes the tab and opens a fresh home tab',
+    15_000,
+  );
+
   console.log(
     'Electron startup passed: Axioo Store is isolated and the custom title bar rendered.',
   );

@@ -165,9 +165,18 @@ void createTitlebarOnDOMContentLoaded({
       element.addEventListener('click', () =>
         ipcRenderer.send(TAB_COMMAND_CHANNEL, `select:${tab.id}`),
       );
+      element.addEventListener('mousedown', (event) => {
+        // A middle press on the overflow container would otherwise start a
+        // horizontal auto-scroll; the press is reserved for closing the tab.
+        if (event.button === 1) {
+          event.preventDefault();
+          event.stopPropagation();
+        }
+      });
       element.addEventListener('auxclick', (event) => {
         if (event.button === 1) {
           event.preventDefault();
+          event.stopPropagation();
           ipcRenderer.send(TAB_COMMAND_CHANNEL, `close:${tab.id}`);
         }
       });
@@ -199,6 +208,12 @@ void createTitlebarOnDOMContentLoaded({
     }
   };
 
+  list.addEventListener('mousedown', (event) => {
+    if (event.button === 1) {
+      event.preventDefault();
+      event.stopPropagation();
+    }
+  });
   list.addEventListener('dragover', (event) => {
     if (!draggedId) return;
     event.preventDefault();
