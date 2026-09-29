@@ -20,9 +20,8 @@ import {
   getInternalUrl,
   getRestorableStoreUrl,
   getSessionTabs,
-  getStartupUrl,
 } from './navigation';
-import { getSettingsStore } from './settings';
+import { getConfiguredBaseUrl, getSettingsStore } from './settings';
 
 export const TAB_STATE_CHANNEL = 'tabs:state';
 export const TAB_COMMAND_CHANNEL = 'tabs:command';
@@ -76,6 +75,8 @@ export class TabManager {
 
   private disposed = false;
 
+  onEditUrl?: () => void;
+
   private readonly persist = createDebouncedSave<PersistedTabs>(
     (state) => {
       const settings = getSettingsStore();
@@ -105,6 +106,24 @@ export class TabManager {
   get activeSite(): WebContents | null {
     const tab = this.activeId ? this.tabs.get(this.activeId) : undefined;
     return tab && !tab.site.isDestroyed() ? tab.site : null;
+  }
+
+  getActiveTabUrl(): string | null {
+    const tab = this.activeId ? this.tabs.get(this.activeId) : undefined;
+    if (!tab) return null;
+    if (!tab.site.isDestroyed() && tab.site.getURL()) {
+      return tab.site.getURL();
+    }
+    return tab.url || null;
+  }
+
+  loadUrlInActiveTab(url: string): boolean {
+    const site = this.activeSite;
+    if (!site || site.isDestroyed()) return false;
+    void site.loadURL(url).catch((err) => {
+      log.error('Failed to load URL in active tab', err);
+    });
+    return true;
   }
 
   ownsSite(site: WebContents): boolean {
@@ -440,6 +459,12 @@ export class TabManager {
       this.activateRelative(input.shift ? -1 : 1);
       return true;
     }
+    if (key === 'l') {
+      if (this.onEditUrl) {
+        this.onEditUrl();
+        return true;
+      }
+    }
     if (/^[1-9]$/.test(key)) {
       this.activateIndex(Number(key) - 1);
       return true;
@@ -464,8 +489,12 @@ export class TabManager {
     else site.reload();
   }
 
-  newTab(url: string = HOME_URL) {
-    return this.createTab(url);
+  getNewTabUrl(): string {
+    return getConfiguredBaseUrl() ?? HOME_URL;
+  }
+
+  newTab(url?: string) {
+    return this.createTab(url ?? this.getNewTabUrl());
   }
 
   activate(id: string) {
@@ -629,9 +658,15 @@ export class TabManager {
   private restore() {
     const settings = getSettingsStore();
     const session = getSessionTabs(settings.get('tabs'));
-    const urls = session?.urls ?? [getStartupUrl(settings.get('lastUrl'))];
+    const defaultUrl = this.getNewTabUrl();
+    const savedLastUrl = settings.get('lastUrl');
+    const startupUrl =
+      typeof savedLastUrl === 'string'
+        ? getRestorableStoreUrl(savedLastUrl) || defaultUrl
+        : defaultUrl;
+    const urls = session?.urls ?? [startupUrl];
     urls.slice(0, MAX_TABS).forEach((url) => this.createTab(url, false));
-    if (this.order.length === 0) this.createTab(HOME_URL, false);
+    if (this.order.length === 0) this.createTab(defaultUrl, false);
     this.lastVisitedUrl = getRestorableStoreUrl(urls[urls.length - 1] ?? '');
     this.activate(
       this.order[Math.min(session?.activeIndex ?? 0, this.order.length - 1)] ??

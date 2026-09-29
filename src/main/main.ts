@@ -264,7 +264,12 @@ const createWindow = async () => {
     () => tabs.activeSite,
     () => tabs.reloadAll(),
     () => void checkForUpdates(window, true),
+    () => tabs.getActiveTabUrl(),
+    (url) => tabs.loadUrlInActiveTab(url),
   );
+  tabs.onEditUrl = () => {
+    void menuBuilder.editCurrentTabUrl();
+  };
   menuBuilder.buildMenu();
   window.setMenuBarVisibility(false);
   await setupTitlebarAndAttachToWindow(window, {

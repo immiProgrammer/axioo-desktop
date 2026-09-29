@@ -12,8 +12,16 @@ const {
   getRestorableStoreUrl,
   getStoreUrl,
   getStartupUrl,
+  isValidBaseUrlHost,
+  parseBaseUrl,
+  isValidBaseUrl,
   HOME_URL,
 } = require('../main/navigation.ts');
+const {
+  getConfiguredBaseUrl,
+  setConfiguredBaseUrl,
+  clearConfiguredBaseUrl,
+} = require('../main/settings.ts');
 
 test('only axioo.store and its HTTPS subdomains stay in the app', () => {
   assert.equal(getInternalUrl(HOME_URL), HOME_URL);
@@ -189,4 +197,104 @@ test('in-page history enables the available direction and handles a new branch',
   history.recordInPage('https://axioo.store/cart', 2);
   assert.equal(history.canGoBack(), true);
   assert.equal(history.canGoForward(), false);
+});
+
+test('isValidBaseUrlHost allows axioo.store and subdomains, rejects invalid hosts', () => {
+  assert.equal(isValidBaseUrlHost('axioo.store'), true);
+  assert.equal(isValidBaseUrlHost('shop.axioo.store'), true);
+  assert.equal(isValidBaseUrlHost('app.sub.axioo.store'), true);
+  assert.equal(isValidBaseUrlHost('AXIOO.STORE'), true);
+  assert.equal(isValidBaseUrlHost('Shop.Axioo.Store'), true);
+  assert.equal(isValidBaseUrlHost('evilaxioo.store'), false);
+  assert.equal(isValidBaseUrlHost('axioo.store.evil.com'), false);
+  assert.equal(isValidBaseUrlHost('.axioo.store'), false);
+  assert.equal(isValidBaseUrlHost('..axioo.store'), false);
+  assert.equal(isValidBaseUrlHost('google.com'), false);
+  assert.equal(isValidBaseUrlHost('localhost'), false);
+});
+
+test('parseBaseUrl validates and normalizes axioo.store and *.axioo.store HTTPS URLs with pathnames', () => {
+  assert.equal(parseBaseUrl('https://axioo.store'), 'https://axioo.store/');
+  assert.equal(
+    parseBaseUrl('https://axioo.store/profile'),
+    'https://axioo.store/profile',
+  );
+  assert.equal(
+    parseBaseUrl('https://shop.axioo.store/products/detail?id=5#reviews'),
+    'https://shop.axioo.store/products/detail?id=5#reviews',
+  );
+  assert.equal(
+    parseBaseUrl('axioo.store/dashboard'),
+    'https://axioo.store/dashboard',
+  );
+  assert.equal(parseBaseUrl('shop.axioo.store'), 'https://shop.axioo.store/');
+  assert.equal(isValidBaseUrl('https://axioo.store/profile'), true);
+  assert.equal(isValidBaseUrl('shop.axioo.store'), true);
+
+  // Reject non-HTTPS
+  assert.equal(parseBaseUrl('http://axioo.store'), null);
+  assert.equal(parseBaseUrl('http://shop.axioo.store/cart'), null);
+  assert.equal(isValidBaseUrl('http://axioo.store'), false);
+
+  // Reject non-Axioo domains
+  assert.equal(parseBaseUrl('https://evil.com'), null);
+  assert.equal(parseBaseUrl('https://evilaxioo.store'), null);
+  assert.equal(parseBaseUrl('https://axioo.store.evil.com'), null);
+  assert.equal(parseBaseUrl('https://google.com'), null);
+
+  // Reject invalid ports, credentials, auth routes, schemes
+  assert.equal(parseBaseUrl('https://axioo.store:8080/'), null);
+  assert.equal(parseBaseUrl('https://user:pass@axioo.store/'), null);
+  assert.equal(parseBaseUrl('https://axioo.store/desktop-login'), null);
+  assert.equal(parseBaseUrl('https://axioo.store/api/auth/session'), null);
+  assert.equal(parseBaseUrl('javascript:alert(1)'), null);
+  assert.equal(parseBaseUrl(''), null);
+  assert.equal(parseBaseUrl('   '), null);
+  assert.equal(parseBaseUrl(null), null);
+  assert.equal(parseBaseUrl(undefined), null);
+});
+
+test('settings baseUrl can be configured, retrieved, and cleared', () => {
+  const memoryStore = {
+    data: {},
+    get(key) {
+      return this.data[key];
+    },
+    set(key, val) {
+      this.data[key] = val;
+    },
+    delete(key) {
+      delete this.data[key];
+    },
+  };
+
+  assert.equal(getConfiguredBaseUrl(memoryStore), null);
+
+  // Valid baseUrl
+  assert.equal(
+    setConfiguredBaseUrl('https://shop.axioo.store/home', memoryStore),
+    true,
+  );
+  assert.equal(
+    getConfiguredBaseUrl(memoryStore),
+    'https://shop.axioo.store/home',
+  );
+
+  // Normalization with scheme omission
+  assert.equal(setConfiguredBaseUrl('axioo.store/products', memoryStore), true);
+  assert.equal(
+    getConfiguredBaseUrl(memoryStore),
+    'https://axioo.store/products',
+  );
+
+  // Invalid baseUrl rejected without overwriting
+  assert.equal(setConfiguredBaseUrl('https://evil.com', memoryStore), false);
+  assert.equal(
+    getConfiguredBaseUrl(memoryStore),
+    'https://axioo.store/products',
+  );
+
+  // Clear baseUrl
+  clearConfiguredBaseUrl(memoryStore);
+  assert.equal(getConfiguredBaseUrl(memoryStore), null);
 });

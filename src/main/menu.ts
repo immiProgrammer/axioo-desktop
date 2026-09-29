@@ -8,7 +8,13 @@ import {
   session,
 } from 'electron';
 import log from 'electron-log';
-import { HOME_URL } from './navigation';
+import { HOME_URL, parseBaseUrl } from './navigation';
+import {
+  clearConfiguredBaseUrl,
+  getConfiguredBaseUrl,
+  setConfiguredBaseUrl,
+} from './settings';
+import { promptEditTabUrl } from './url-prompt';
 
 export default class MenuBuilder {
   mainWindow: BrowserWindow;
@@ -19,16 +25,24 @@ export default class MenuBuilder {
 
   onCheckForUpdates?: () => void;
 
+  getActiveUrl?: () => string | null;
+
+  onNavigateActive?: (url: string) => void;
+
   constructor(
     mainWindow: BrowserWindow,
     getSiteContents: () => WebContents | null,
     onDataCleared?: () => void,
     onCheckForUpdates?: () => void,
+    getActiveUrl?: () => string | null,
+    onNavigateActive?: (url: string) => void,
   ) {
     this.mainWindow = mainWindow;
     this.getSiteContents = getSiteContents;
     this.onDataCleared = onDataCleared;
     this.onCheckForUpdates = onCheckForUpdates;
+    this.getActiveUrl = getActiveUrl;
+    this.onNavigateActive = onNavigateActive;
   }
 
   buildMenu(): Menu {
@@ -64,6 +78,110 @@ export default class MenuBuilder {
           },
         },
       ]).popup({ window: this.mainWindow });
+    });
+  }
+
+  getCurrentUrl(): string | null {
+    if (this.getActiveUrl) {
+      const url = this.getActiveUrl();
+      if (url) return url;
+    }
+    const site = this.getSiteContents();
+    return site && !site.isDestroyed() ? site.getURL() : null;
+  }
+
+  navigateActive(url: string): void {
+    if (this.onNavigateActive) {
+      this.onNavigateActive(url);
+      return;
+    }
+    const site = this.getSiteContents();
+    if (site && !site.isDestroyed()) {
+      void site.loadURL(url).catch((err) => {
+        log.error('Failed to navigate active tab', err);
+      });
+    }
+  }
+
+  async editCurrentTabUrl(): Promise<void> {
+    if (this.mainWindow.isDestroyed()) return;
+    const currentUrl = this.getCurrentUrl() || '';
+    const newUrl = await promptEditTabUrl(this.mainWindow, currentUrl);
+    if (!newUrl) return;
+
+    const verified = parseBaseUrl(newUrl);
+    if (!verified) {
+      await dialog.showMessageBox(this.mainWindow, {
+        type: 'error',
+        title: 'Invalid URL',
+        message:
+          'The URL must be an HTTPS URL on axioo.store or *.axioo.store.',
+      });
+      return;
+    }
+
+    this.navigateActive(verified);
+  }
+
+  async setBaseUrlToCurrentTab(): Promise<void> {
+    if (this.mainWindow.isDestroyed()) return;
+    const currentUrl = this.getCurrentUrl();
+    if (!currentUrl) {
+      await dialog.showMessageBox(this.mainWindow, {
+        type: 'warning',
+        title: 'Set Base URL',
+        message: 'No active tab URL is available to set as Base URL.',
+      });
+      return;
+    }
+
+    const verified = parseBaseUrl(currentUrl);
+    if (!verified) {
+      await dialog.showMessageBox(this.mainWindow, {
+        type: 'warning',
+        title: 'Set Base URL',
+        message: 'The current tab URL is not a valid Axioo store URL.',
+        detail: `Current URL: ${currentUrl}\n\nBase URL must be an HTTPS URL on axioo.store or *.axioo.store.`,
+      });
+      return;
+    }
+
+    const success = setConfiguredBaseUrl(verified);
+    if (success) {
+      await dialog.showMessageBox(this.mainWindow, {
+        type: 'info',
+        title: 'Base URL Updated',
+        message: 'Base URL has been set to the current tab:',
+        detail: verified,
+      });
+    } else {
+      await dialog.showMessageBox(this.mainWindow, {
+        type: 'error',
+        title: 'Set Base URL',
+        message: 'Failed to update Base URL setting.',
+      });
+    }
+  }
+
+  async clearBaseUrlSetting(): Promise<void> {
+    if (this.mainWindow.isDestroyed()) return;
+    const current = getConfiguredBaseUrl();
+    if (!current) {
+      await dialog.showMessageBox(this.mainWindow, {
+        type: 'info',
+        title: 'Base URL',
+        message: 'No custom Base URL is configured.',
+        detail: `Using default: ${HOME_URL}`,
+      });
+      return;
+    }
+
+    clearConfiguredBaseUrl();
+    await dialog.showMessageBox(this.mainWindow, {
+      type: 'info',
+      title: 'Base URL Reset',
+      message: 'Base URL has been reset to default:',
+      detail: HOME_URL,
     });
   }
 
@@ -136,6 +254,26 @@ export default class MenuBuilder {
       label: 'File',
       submenu: [
         {
+          label: 'Edit Current Tab URL...',
+          accelerator: 'Cmd+L',
+          click: () => {
+            void this.editCurrentTabUrl();
+          },
+        },
+        {
+          label: 'Set Current Tab as Base URL',
+          click: () => {
+            void this.setBaseUrlToCurrentTab();
+          },
+        },
+        {
+          label: 'Clear Base URL',
+          click: () => {
+            void this.clearBaseUrlSetting();
+          },
+        },
+        { type: 'separator' },
+        {
           label: 'Clear All Browsing Data...',
           accelerator: 'Cmd+Shift+Backspace',
           click: () => {
@@ -147,6 +285,30 @@ export default class MenuBuilder {
       ],
     };
     const subMenuEdit: MenuItemConstructorOptions = { role: 'editMenu' };
+    const subMenuTab: MenuItemConstructorOptions = {
+      label: 'Tab',
+      submenu: [
+        {
+          label: 'Edit Current Tab URL...',
+          accelerator: 'Cmd+L',
+          click: () => {
+            void this.editCurrentTabUrl();
+          },
+        },
+        {
+          label: 'Set Current Tab as Base URL',
+          click: () => {
+            void this.setBaseUrlToCurrentTab();
+          },
+        },
+        {
+          label: 'Clear Base URL',
+          click: () => {
+            void this.clearBaseUrlSetting();
+          },
+        },
+      ],
+    };
     const subMenuWindow: MenuItemConstructorOptions = { role: 'windowMenu' };
     const subMenuView: MenuItemConstructorOptions = {
       label: 'View',
@@ -161,6 +323,7 @@ export default class MenuBuilder {
       subMenuAbout,
       subMenuFile,
       subMenuEdit,
+      subMenuTab,
       subMenuView,
       subMenuWindow,
       subMenuHelp,
@@ -214,6 +377,26 @@ export default class MenuBuilder {
         label: '&File',
         submenu: [
           {
+            label: 'Edit Current Tab URL...',
+            accelerator: 'Ctrl+L',
+            click: () => {
+              void this.editCurrentTabUrl();
+            },
+          },
+          {
+            label: 'Set Current Tab as Base URL',
+            click: () => {
+              void this.setBaseUrlToCurrentTab();
+            },
+          },
+          {
+            label: 'Clear Base URL',
+            click: () => {
+              void this.clearBaseUrlSetting();
+            },
+          },
+          { type: 'separator' },
+          {
             label: 'Clear All Browsing Data...',
             accelerator: 'Ctrl+Shift+Delete',
             click: () => {
@@ -222,6 +405,30 @@ export default class MenuBuilder {
           },
           { type: 'separator' },
           { role: 'close' },
+        ],
+      },
+      {
+        label: '&Tab',
+        submenu: [
+          {
+            label: 'Edit Current Tab URL...',
+            accelerator: 'Ctrl+L',
+            click: () => {
+              void this.editCurrentTabUrl();
+            },
+          },
+          {
+            label: 'Set Current Tab as Base URL',
+            click: () => {
+              void this.setBaseUrlToCurrentTab();
+            },
+          },
+          {
+            label: 'Clear Base URL',
+            click: () => {
+              void this.clearBaseUrlSetting();
+            },
+          },
         ],
       },
       { role: 'editMenu' },

@@ -27,6 +27,54 @@ const resolveHomeUrl = () => {
 
 export const HOME_URL = resolveHomeUrl();
 
+export function isValidBaseUrlHost(host: string): boolean {
+  const normalized = host.toLowerCase().trim();
+  if (normalized === 'axioo.store') return true;
+  if (!normalized.endsWith('.axioo.store')) return false;
+
+  const subdomain = normalized.slice(0, -'.axioo.store'.length);
+  if (!subdomain) return false;
+
+  const labels = subdomain.split('.');
+  return labels.every((label) =>
+    /^[a-z0-9]([a-z0-9-]*[a-z0-9])?$/i.test(label),
+  );
+}
+
+export function parseBaseUrl(raw: unknown): string | null {
+  if (typeof raw !== 'string') return null;
+  const trimmed = raw.trim();
+  if (!trimmed) return null;
+
+  try {
+    const hasScheme = /^[a-zA-Z][a-zA-Z0-9+.-]*:/.test(trimmed);
+    const candidate = hasScheme ? trimmed : `https://${trimmed}`;
+    const url = new URL(candidate);
+
+    if (url.protocol !== 'https:') return null;
+    if (url.username || url.password) return null;
+    if (url.port && url.port !== '443') return null;
+    if (!isValidBaseUrlHost(url.hostname)) return null;
+
+    const pathname = url.pathname.toLowerCase();
+    if (
+      pathname === '/desktop-login' ||
+      pathname === '/desktop-google-start' ||
+      pathname.startsWith('/api/auth/')
+    ) {
+      return null;
+    }
+
+    return url.href;
+  } catch {
+    return null;
+  }
+}
+
+export function isValidBaseUrl(raw: unknown): boolean {
+  return parseBaseUrl(raw) !== null;
+}
+
 export function getStartupUrl(
   savedUrl: unknown,
   baseUrl: string = HOME_URL,
