@@ -89,7 +89,8 @@ body {
 } */
 
 .axioo-menu-button {
-  margin-right: -6px;
+  margin-right: -4px;
+  margin-left: 4px;
 }
 
 /* The app icon pops a native menu, which keeps the pointer "over" the button

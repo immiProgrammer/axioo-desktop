@@ -121,7 +121,11 @@ const createWindow = async () => {
     mainWindow = null;
   });
 
-  const menuBuilder = new MenuBuilder(window, () => tabs.activeSite);
+  const menuBuilder = new MenuBuilder(
+    window,
+    () => tabs.activeSite,
+    () => tabs.reloadAll(),
+  );
   menuBuilder.buildMenu();
   window.setMenuBarVisibility(false);
   await setupTitlebarAndAttachToWindow(window, {

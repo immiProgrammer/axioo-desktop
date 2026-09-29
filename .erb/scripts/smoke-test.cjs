@@ -221,7 +221,7 @@ async function main() {
   await waitFor(
     () =>
       evaluateToolbar(
-        "(() => { const button = document.querySelector('.axioo-menu-button'); const icon = button?.querySelector('.axioo-menu-icon'); if (!button || !icon) return false; const style = getComputedStyle(icon); const mask = style.maskImage || style.webkitMaskImage; return button.getAttribute('aria-label') === 'Open menu' && mask && mask !== 'none' && Math.round(icon.getBoundingClientRect().width) === 24; })()",
+        "(() => { const button = document.querySelector('.axioo-menu-button'); const icon = button?.querySelector('.axioo-menu-icon'); if (!button || !icon) return false; const style = getComputedStyle(icon); const mask = style.maskImage || style.webkitMaskImage; return button.getAttribute('aria-label') === 'Open menu' && mask && mask !== 'none' && Math.round(icon.getBoundingClientRect().width) === 22; })()",
       ),
     'menu button icon',
   );

@@ -1,5 +1,12 @@
 import path from 'node:path';
-import { clipboard, ipcMain, Menu, shell, WebContentsView } from 'electron';
+import {
+  app,
+  clipboard,
+  ipcMain,
+  Menu,
+  shell,
+  WebContentsView,
+} from 'electron';
 import type { BrowserWindow, IpcMainEvent, WebContents } from 'electron';
 import log from 'electron-log';
 import type { FetchBridge } from './fetch-bridge';
@@ -69,11 +76,15 @@ export class TabManager {
 
   private disposed = false;
 
-  private readonly persist = createDebouncedSave<PersistedTabs>((state) => {
-    const settings = getSettingsStore();
-    settings.set('tabs', state);
-    if (this.lastVisitedUrl) settings.set('lastUrl', this.lastVisitedUrl);
-  });
+  private readonly persist = createDebouncedSave<PersistedTabs>(
+    (state) => {
+      const settings = getSettingsStore();
+      settings.set('tabs', state);
+      if (this.lastVisitedUrl) settings.set('lastUrl', this.lastVisitedUrl);
+    },
+    1_000,
+    5_000,
+  );
 
   constructor(window: BrowserWindow, fetchBridge: FetchBridge) {
     this.window = window;
@@ -84,12 +95,21 @@ export class TabManager {
     this.window.on('leave-full-screen', this.onFullScreenChange);
     this.window.on('close', this.flush);
     this.window.on('closed', this.dispose);
+    app.on('before-quit', this.flush);
     this.restore();
   }
 
   get activeSite(): WebContents | null {
     const tab = this.activeId ? this.tabs.get(this.activeId) : undefined;
     return tab && !tab.site.isDestroyed() ? tab.site : null;
+  }
+
+  reloadAll(): void {
+    for (const tab of this.tabs.values()) {
+      if (!tab.site.isDestroyed()) {
+        tab.site.reload();
+      }
+    }
   }
 
   private onFullScreenChange = () => {
@@ -239,6 +259,7 @@ export class TabManager {
     tab.title = this.getTabTitle(tab, storeUrl);
     if (this.activeId === tab.id) this.lastVisitedUrl = storeUrl;
     this.sendState();
+    this.schedulePersist();
   }
 
   private getTabTitle(tab: Tab, url: string): string {
@@ -271,7 +292,7 @@ export class TabManager {
       history: new SiteHistory(),
       detachFetchBridge: this.fetchBridge.attach(site),
       title: 'Axioo Store',
-      url: '',
+      url,
     };
     this.tabs.set(tab.id, tab);
     this.order.push(tab.id);
@@ -568,14 +589,34 @@ export class TabManager {
 
   private snapshot(): PersistedTabs {
     const urls = this.order
-      .map((id) => getStoreUrl(this.tabs.get(id)?.url ?? ''))
+      .map((id) => {
+        const tab = this.tabs.get(id);
+        if (!tab) return null;
+        const currentUrl =
+          !tab.site.isDestroyed() && tab.site.getURL()
+            ? tab.site.getURL()
+            : tab.url;
+        return getStoreUrl(currentUrl);
+      })
       .filter((url): url is string => url !== null);
     const activeIndex = this.activeId ? this.order.indexOf(this.activeId) : 0;
     return { urls, activeIndex: Math.max(activeIndex, 0) };
   }
 
-  private flush = () => {
+  persistNow = () => {
+    const state = this.snapshot();
+    if (state.urls.length > 0) {
+      const settings = getSettingsStore();
+      settings.set('tabs', state);
+      if (this.lastVisitedUrl) {
+        settings.set('lastUrl', this.lastVisitedUrl);
+      }
+    }
     this.persist.flush();
+  };
+
+  private flush = () => {
+    this.persistNow();
   };
 
   private restore() {
@@ -595,7 +636,8 @@ export class TabManager {
   dispose = () => {
     if (this.disposed) return;
     this.disposed = true;
-    this.persist.flush();
+    this.persistNow();
+    app.removeListener('before-quit', this.flush);
     ipcMain.removeListener(TAB_COMMAND_CHANNEL, this.onTabCommand);
     this.window.removeListener('resize', this.layout);
     this.window.removeListener('enter-full-screen', this.onFullScreenChange);
