@@ -48,7 +48,7 @@ const createWindow = async () => {
     ...(process.platform === 'win32'
       ? {
           titleBarOverlay: {
-            color: nativeTheme.shouldUseDarkColors ? '#202124' : '#f6f8fb',
+            color: nativeTheme.shouldUseDarkColors ? '#2c2c2c' : '#f6f8fb',
             symbolColor: nativeTheme.shouldUseDarkColors
               ? '#f0f2f5'
               : '#1d2b41',
@@ -56,7 +56,7 @@ const createWindow = async () => {
           },
         }
       : {}),
-    backgroundColor: nativeTheme.shouldUseDarkColors ? '#202124' : '#f6f8fb',
+    backgroundColor: nativeTheme.shouldUseDarkColors ? '#2c2c2c' : '#f6f8fb',
     autoHideMenuBar: true,
     webPreferences: {
       preload: path.join(__dirname, '../preload/preload.js'),
@@ -70,7 +70,7 @@ const createWindow = async () => {
   const updateWindowTheme = () => {
     if (!window.isDestroyed()) {
       window.setBackgroundColor(
-        nativeTheme.shouldUseDarkColors ? '#202124' : '#f6f8fb',
+        nativeTheme.shouldUseDarkColors ? '#2c2c2c' : '#f6f8fb',
       );
     }
   };

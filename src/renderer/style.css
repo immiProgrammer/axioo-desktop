@@ -15,7 +15,7 @@
 
 @media (prefers-color-scheme: dark) {
   :root {
-    --titlebar-background: #202124;
+    --titlebar-background: #2c2c2c;
     --titlebar-foreground: #f0f2f5;
     --titlebar-border: #383b40;
     --titlebar-hover: #36393e;
