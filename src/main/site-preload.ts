@@ -2,8 +2,8 @@ import { ipcRenderer } from 'electron';
 
 const FETCH_CHANNEL = 'axioo:fetch';
 const ABORT_CHANNEL = 'axioo:fetch:abort';
+const INTERNAL_URL_CHANNEL = 'axioo:internal-url';
 const BRIDGE_VERSION = 1;
-const STORE_HOST = /(^|\.)axioo\.store$/i;
 const NULL_BODY_STATUS = new Set([101, 103, 204, 205, 304]);
 const BODYLESS_METHODS = new Set(['GET', 'HEAD']);
 
@@ -223,7 +223,10 @@ const axiooFetch = async (
 const isStorePage = () => {
   if (window.top !== window) return false;
   try {
-    return STORE_HOST.test(new URL(window.location.href).hostname);
+    // The main process owns the allow-list, so dev and production agree.
+    return (
+      ipcRenderer.sendSync(INTERNAL_URL_CHANNEL, window.location.href) === true
+    );
   } catch {
     return false;
   }

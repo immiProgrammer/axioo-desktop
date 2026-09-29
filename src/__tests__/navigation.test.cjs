@@ -1,5 +1,9 @@
 const assert = require('node:assert/strict');
 const { test } = require('node:test');
+
+// This suite describes production behaviour, so pin the base URL before the
+// module reads it.
+process.env.APP_URL = 'https://axioo.store/';
 const { SiteHistory } = require('../main/history.ts');
 const {
   createDebouncedUrlSave,
@@ -24,6 +28,33 @@ test('only axioo.store and its HTTPS subdomains stay in the app', () => {
   assert.equal(getInternalUrl('https://evil.example/axioo.store'), null);
   assert.equal(getInternalUrl('https://axioo.store:444/'), null);
   assert.equal(getInternalUrl('file:///tmp/example'), null);
+});
+
+test('a dev base URL only keeps its own host and ports inside the app', () => {
+  const dev = 'http://localhost:3000/';
+  assert.equal(getInternalUrl(dev, dev), dev);
+  assert.equal(
+    getInternalUrl('http://localhost:3000/cart?x=1', dev),
+    'http://localhost:3000/cart?x=1',
+  );
+  assert.equal(
+    getInternalUrl('http://127.0.0.1:3000/cart', dev),
+    'http://127.0.0.1:3000/cart',
+  );
+  assert.equal(getStoreUrl('https://localhost:3000/cart', dev), dev + 'cart');
+  assert.equal(
+    getStoreUrl('http://localhost:4000/api', dev),
+    'http://localhost:4000/api',
+  );
+  assert.equal(getStoreUrl('https://axioo.store/cart', dev), null);
+  assert.equal(getStoreUrl('http://example.com/', dev), null);
+  assert.equal(getStartupUrl('http://localhost:3000/cart', dev), dev + 'cart');
+  assert.equal(getStartupUrl('https://axioo.store/cart', dev), dev);
+  assert.equal(getStartupUrl(undefined, dev), dev);
+  assert.equal(
+    getInternalUrl('https://accounts.google.com/o/oauth2', dev),
+    'https://accounts.google.com/o/oauth2',
+  );
 });
 
 test('Google account sign-in redirects stay in the app', () => {

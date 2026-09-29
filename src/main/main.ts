@@ -1,4 +1,5 @@
 /* eslint no-console: off, promise/always-return: off */
+import './env';
 import path from 'node:path';
 import {
   app,
@@ -187,6 +188,14 @@ const createWindow = async () => {
   };
   ipcMain.on('toolbar:command', onToolbarCommand);
 
+  const onInternalUrlQuery = (event: Electron.IpcMainEvent, url: unknown) => {
+    event.returnValue =
+      event.sender === site && typeof url === 'string'
+        ? getStoreUrl(url) !== null
+        : false;
+  };
+  ipcMain.on('axioo:internal-url', onInternalUrlQuery);
+
   window.on('close', () => {
     const currentUrl = getStoreUrl(site.getURL());
     if (currentUrl) urlSave.schedule(currentUrl);
@@ -196,6 +205,7 @@ const createWindow = async () => {
   window.on('closed', () => {
     nativeTheme.removeListener('updated', updateWindowTheme);
     ipcMain.removeListener('toolbar:command', onToolbarCommand);
+    ipcMain.removeListener('axioo:internal-url', onInternalUrlQuery);
     disposeFetchBridge();
     site.close();
     mainWindow = null;

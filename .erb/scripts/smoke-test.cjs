@@ -2,6 +2,33 @@ const assert = require('node:assert/strict');
 const { spawn, spawnSync } = require('node:child_process');
 const { setTimeout: delay } = require('node:timers/promises');
 
+require('dotenv').config({ quiet: true });
+
+// Mirrors the app: an unusable APP_URL falls back to the production URL.
+const siteUrl = (() => {
+  try {
+    return new URL(process.env.APP_URL || 'https://axioo.store/');
+  } catch {
+    return new URL('https://axioo.store/');
+  }
+})();
+const siteIsProduction =
+  siteUrl.hostname === 'axioo.store' ||
+  siteUrl.hostname.endsWith('.axioo.store');
+const matchesSite = (rawUrl) => {
+  let url;
+  try {
+    url = new URL(rawUrl);
+  } catch {
+    return false;
+  }
+  return siteIsProduction
+    ? url.protocol === 'https:' &&
+        (url.hostname === siteUrl.hostname ||
+          url.hostname.endsWith(`.${siteUrl.hostname}`))
+    : url.origin === siteUrl.origin;
+};
+
 const debugPort = Number(process.env.SMOKE_DEBUG_PORT || 9335);
 const rendererPort = Number(process.env.PORT || 1212);
 const windows = process.platform === 'win32';
@@ -57,16 +84,7 @@ async function main() {
       const targets = await response.json();
       return targets.find((entry) => {
         if (entry.type !== 'page') return false;
-        try {
-          const url = new URL(entry.url);
-          return (
-            url.protocol === 'https:' &&
-            (url.hostname === 'axioo.store' ||
-              url.hostname.endsWith('.axioo.store'))
-          );
-        } catch {
-          return false;
-        }
+        return matchesSite(entry.url);
       });
     } catch {
       return null;
@@ -221,7 +239,7 @@ async function main() {
   await waitFor(
     () =>
       evaluate(
-        "window.location.protocol === 'https:' && window.location.hostname.endsWith('axioo.store') && document.readyState === 'complete'",
+        `window.location.protocol === ${JSON.stringify(siteUrl.protocol)} && window.location.hostname === ${JSON.stringify(siteUrl.hostname)} && document.readyState === 'complete'`,
       ),
     'site ready',
   );
