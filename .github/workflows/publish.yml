@@ -28,6 +28,18 @@ jobs:
         run: |
           npm ci
 
+      - name: Sync app version
+        shell: pwsh
+        run: |
+          $rootVersion = (Get-Content package.json | ConvertFrom-Json).version
+          $appPkgPath = "release/app/package.json"
+          if (Test-Path $appPkgPath) {
+            $appPkg = Get-Content $appPkgPath -Raw | ConvertFrom-Json
+            Write-Host "Ensuring $appPkgPath has version $rootVersion"
+            $appPkg.version = $rootVersion
+            $appPkg | ConvertTo-Json -Depth 10 | Set-Content $appPkgPath
+          }
+
       - name: Build application
         run: |
           npm run build
