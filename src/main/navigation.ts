@@ -80,6 +80,38 @@ export function getInternalUrl(
   return null;
 }
 
+export type SessionTabs = {
+  urls: string[];
+  activeIndex: number;
+};
+
+export function getSessionTabs(
+  raw: unknown,
+  baseUrl: string = HOME_URL,
+): SessionTabs | null {
+  if (raw === null || typeof raw !== 'object') return null;
+  const { urls, activeIndex } = raw as {
+    urls?: unknown;
+    activeIndex?: unknown;
+  };
+  if (!Array.isArray(urls)) return null;
+
+  const storeUrls = urls
+    .filter((url): url is string => typeof url === 'string')
+    .map((url) => getStoreUrl(url, baseUrl))
+    .filter((url): url is string => url !== null);
+  if (storeUrls.length === 0) return null;
+
+  const index =
+    typeof activeIndex === 'number' && Number.isInteger(activeIndex)
+      ? activeIndex
+      : 0;
+  return {
+    urls: storeUrls,
+    activeIndex: Math.min(Math.max(index, 0), storeUrls.length - 1),
+  };
+}
+
 export function getExternalUrl(rawUrl: string): string | null {
   try {
     const url = new URL(rawUrl);
@@ -97,12 +129,12 @@ export function getExternalUrl(rawUrl: string): string | null {
   return null;
 }
 
-export function createDebouncedUrlSave(
-  save: (url: string) => void,
+export function createDebouncedSave<T>(
+  save: (value: T) => void,
   debounceMs = 5_000,
   maxWaitMs = 15_000,
 ) {
-  let pendingUrl: string | null = null;
+  let pending: { value: T } | null = null;
   let debounceTimer: ReturnType<typeof setTimeout> | undefined;
   let maxWaitTimer: ReturnType<typeof setTimeout> | undefined;
 
@@ -112,19 +144,27 @@ export function createDebouncedUrlSave(
     debounceTimer = undefined;
     maxWaitTimer = undefined;
 
-    if (pendingUrl !== null) {
-      const url = pendingUrl;
-      pendingUrl = null;
-      save(url);
+    if (pending !== null) {
+      const { value } = pending;
+      pending = null;
+      save(value);
     }
   };
 
-  const schedule = (url: string) => {
-    pendingUrl = url;
+  const schedule = (value: T) => {
+    pending = { value };
     if (debounceTimer) clearTimeout(debounceTimer);
     debounceTimer = setTimeout(flush, debounceMs);
     maxWaitTimer ??= setTimeout(flush, maxWaitMs);
   };
 
   return { schedule, flush };
+}
+
+export function createDebouncedUrlSave(
+  save: (url: string) => void,
+  debounceMs?: number,
+  maxWaitMs?: number,
+) {
+  return createDebouncedSave(save, debounceMs, maxWaitMs);
 }

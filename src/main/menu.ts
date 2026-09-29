@@ -9,11 +9,14 @@ import {
 export default class MenuBuilder {
   mainWindow: BrowserWindow;
 
-  siteContents: WebContents;
+  getSiteContents: () => WebContents | null;
 
-  constructor(mainWindow: BrowserWindow, siteContents: WebContents) {
+  constructor(
+    mainWindow: BrowserWindow,
+    getSiteContents: () => WebContents | null,
+  ) {
     this.mainWindow = mainWindow;
-    this.siteContents = siteContents;
+    this.getSiteContents = getSiteContents;
   }
 
   buildMenu(): Menu {
@@ -36,14 +39,16 @@ export default class MenuBuilder {
   }
 
   setupDevelopmentEnvironment(): void {
-    this.siteContents.on('context-menu', (_, props) => {
+    this.mainWindow.webContents.on('context-menu', (_, props) => {
+      const site = this.getSiteContents();
+      if (!site) return;
       const { x, y } = props;
 
       Menu.buildFromTemplate([
         {
           label: 'Inspect element',
           click: () => {
-            this.siteContents.inspectElement(x, y);
+            site.inspectElement(x, y);
           },
         },
       ]).popup({ window: this.mainWindow });
@@ -100,10 +105,13 @@ export default class MenuBuilder {
     return [
       ...(development
         ? ([
-            { label: 'Reload Page', click: () => this.siteContents.reload() },
+            {
+              label: 'Reload Page',
+              click: () => this.getSiteContents()?.reload(),
+            },
             {
               label: 'Toggle Developer Tools',
-              click: () => this.siteContents.toggleDevTools(),
+              click: () => this.getSiteContents()?.toggleDevTools(),
             },
           ] as MenuItemConstructorOptions[])
         : []),

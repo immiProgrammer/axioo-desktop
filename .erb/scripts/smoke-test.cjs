@@ -1,5 +1,8 @@
 const assert = require('node:assert/strict');
 const { spawn, spawnSync } = require('node:child_process');
+const fs = require('node:fs');
+const os = require('node:os');
+const path = require('node:path');
 const { setTimeout: delay } = require('node:timers/promises');
 
 require('dotenv').config({ quiet: true });
@@ -32,6 +35,10 @@ const matchesSite = (rawUrl) => {
 const debugPort = Number(process.env.SMOKE_DEBUG_PORT || 9335);
 const rendererPort = Number(process.env.PORT || 1212);
 const windows = process.platform === 'win32';
+// A throwaway profile keeps the restored tab session deterministic and never
+// touches the developer's real settings.
+const userDataDir = path.join(os.tmpdir(), `axioo-smoke-${process.pid}`);
+fs.rmSync(userDataDir, { recursive: true, force: true });
 const child = spawn(
   windows ? 'npm.cmd' : 'npm',
   [
@@ -44,7 +51,11 @@ const child = spawn(
   {
     detached: !windows,
     shell: windows,
-    env: process.env,
+    env: {
+      ...process.env,
+      APPDATA: userDataDir,
+      XDG_CONFIG_HOME: userDataDir,
+    },
     stdio: ['ignore', 'pipe', 'pipe'],
   },
 );
@@ -52,6 +63,7 @@ let output = '';
 let exited = false;
 let socket;
 let toolbarSocket;
+const extraSockets = [];
 child.stdout.on('data', (data) => {
   output += data;
 });
@@ -105,7 +117,7 @@ async function main() {
       requests.delete(message.id);
     }
   });
-  function send(method, params = {}) {
+  function command(targetSocket, method, params = {}) {
     id += 1;
     const requestId = id;
     return new Promise((resolve, reject) => {
@@ -119,8 +131,11 @@ async function main() {
           reject(new Error(JSON.stringify(message)));
         } else resolve(message.result);
       });
-      socket.send(JSON.stringify({ id: requestId, method, params }));
+      targetSocket.send(JSON.stringify({ id: requestId, method, params }));
     });
+  }
+  function send(method, params = {}) {
+    return command(socket, method, params);
   }
   async function evaluate(expression) {
     const result = await send('Runtime.evaluate', {
@@ -196,16 +211,17 @@ async function main() {
       'axioo-toolbar-button axioo-menu-button',
     ],
   );
-  assert.deepEqual(
+  assert.equal(
     await evaluateToolbar(
-      "[...document.querySelector('.axioo-toolbar-center').children].map((element) => element.className)",
+      "Math.round(document.querySelector('.axioo-back-button').getBoundingClientRect().left)",
     ),
-    ['axioo-toolbar-logo', 'axioo-toolbar-title'],
+    0,
+    'the toolbar buttons should start flush at the window edge',
   );
   await waitFor(
     () =>
       evaluateToolbar(
-        "document.querySelector('.axioo-toolbar-logo').naturalWidth > 0",
+        "document.querySelector('.axioo-tab-strip .axioo-toolbar-logo').naturalWidth > 0",
       ),
     'Axioo logo',
   );
@@ -224,6 +240,39 @@ async function main() {
       'native Windows caption buttons',
     );
   }
+  const stripStyle = await waitFor(
+    () =>
+      evaluateToolbar(
+        "(() => { const strip = document.querySelector('.axioo-tab-strip'); if (!strip) return null; const style = getComputedStyle(strip); return { top: style.top, height: style.height, hidden: strip.hidden }; })()",
+      ),
+    'tab strip',
+  );
+  assert.equal(stripStyle.top, '0px');
+  assert.equal(stripStyle.height, '30px');
+  assert.equal(stripStyle.hidden, false);
+  // The strip must paint above the library's opaque .cet-titlebar, otherwise
+  // the tabs exist in the DOM but are hidden behind the caption.
+  assert.equal(
+    await evaluateToolbar(
+      "(() => { const tab = document.querySelector('.axioo-tab'); const bounds = tab.getBoundingClientRect(); const hit = document.elementFromPoint(bounds.left + bounds.width / 2, bounds.top + bounds.height / 2); return Boolean(hit && hit.closest('.axioo-tab-strip')); })()",
+    ),
+    true,
+    'the tab strip must be the visible layer on the caption row',
+  );
+  assert.equal(
+    await evaluateToolbar(
+      "(() => { const button = document.querySelector('.axioo-tab-new'); const bounds = button.getBoundingClientRect(); const hit = document.elementFromPoint(bounds.left + bounds.width / 2, bounds.top + bounds.height / 2); return Boolean(hit && hit.closest('.axioo-tab-strip')); })()",
+    ),
+    true,
+    'the new tab button must be clickable',
+  );
+  await waitFor(
+    () =>
+      evaluateToolbar(
+        "document.querySelectorAll('.axioo-tab').length === 1 && document.querySelector('.axioo-tab').classList.contains('axioo-tab-active')",
+      ),
+    'restored tab',
+  );
   assert.equal(
     await evaluateToolbar(
       "document.querySelector('.axioo-back-button').disabled",
@@ -254,36 +303,226 @@ async function main() {
   );
   assert.ok(bridged.length > 0, 'Axioo fetch bridge returned an empty body');
   const pageTitle = await evaluate('document.title');
-  const expectedTitle = !pageTitle.trim()
-    ? 'Axioo Store'
-    : /axioo/i.test(pageTitle)
-      ? pageTitle.trim()
-      : `Axioo Store | ${pageTitle.trim()}`;
+  const activeTabTitle = () =>
+    evaluateToolbar(
+      "document.querySelector('.axioo-tab-active .axioo-tab-title')?.textContent ?? ''",
+    );
   await waitFor(
     () =>
-      evaluateToolbar(
-        `document.querySelector('.axioo-toolbar-title').textContent === ${JSON.stringify(expectedTitle)}`,
+      activeTabTitle().then(
+        (value) => value === (pageTitle.trim() || 'Axioo Store'),
       ),
-    'centered page title',
+    'page title shown in the active tab',
   );
   await evaluate("document.title = 'Orders'; true");
   await waitFor(
-    () =>
-      evaluateToolbar(
-        "document.querySelector('.axioo-toolbar-title').textContent === 'Axioo Store | Orders'",
-      ),
-    'prefixed window title',
+    () => activeTabTitle().then((value) => value === 'Orders'),
+    'tab title follows the page title',
   );
   await evaluate("document.title = 'AxIoO Orders'; true");
   await waitFor(
-    () =>
-      evaluateToolbar(
-        "document.querySelector('.axioo-toolbar-title').textContent === 'AxIoO Orders'",
-      ),
-    'title already containing Axioo',
+    () => activeTabTitle().then((value) => value === 'AxIoO Orders'),
+    'tab title keeps a page title that already mentions Axioo',
   );
   await evaluate(`document.title = ${JSON.stringify(pageTitle)}; true`);
   const initialUrl = await evaluate('window.location.href');
+
+  // Tabs live on the caption row, so the site view only clears that row.
+  const chromeHeight = await evaluateToolbar('window.innerHeight');
+  const siteHeight = await evaluate('window.innerHeight');
+  assert.equal(
+    chromeHeight - siteHeight,
+    30,
+    'the site view should start under the 30px caption that also holds the tab strip',
+  );
+
+  const connectTo = async (pageTarget) => {
+    const pageSocket = new WebSocket(pageTarget.webSocketDebuggerUrl);
+    await new Promise((resolve, reject) => {
+      pageSocket.addEventListener('open', resolve, { once: true });
+      pageSocket.addEventListener('error', reject, { once: true });
+    });
+    pageSocket.addEventListener('message', ({ data }) => {
+      const message = JSON.parse(data);
+      if (requests.has(message.id)) {
+        requests.get(message.id)(message);
+        requests.delete(message.id);
+      }
+    });
+    const evaluatePage = (expression) =>
+      new Promise((resolve, reject) => {
+        const requestId = (id += 1);
+        const onMessage = ({ data }) => {
+          const message = JSON.parse(data);
+          if (message.id !== requestId) return;
+          pageSocket.removeEventListener('message', onMessage);
+          if (message.error || message.result?.exceptionDetails) {
+            reject(new Error(JSON.stringify(message)));
+          } else resolve(message.result.result.value);
+        };
+        pageSocket.addEventListener('message', onMessage);
+        pageSocket.send(
+          JSON.stringify({
+            id: requestId,
+            method: 'Runtime.evaluate',
+            params: { expression, returnByValue: true, awaitPromise: true },
+          }),
+        );
+      });
+    return { pageSocket, evaluatePage };
+  };
+  const pressCtrl = async (key, targetSocket = socket) => {
+    const code = `Key${key.toUpperCase()}`;
+    const params = {
+      key,
+      code,
+      windowsVirtualKeyCode: key.toUpperCase().charCodeAt(0),
+      nativeVirtualKeyCode: key.toUpperCase().charCodeAt(0),
+      modifiers: 2,
+    };
+    // rawKeyDown is the only CDP key type that reaches before-input-event.
+    await command(targetSocket, 'Input.dispatchKeyEvent', {
+      type: 'rawKeyDown',
+      ...params,
+    });
+    await command(targetSocket, 'Input.dispatchKeyEvent', {
+      type: 'keyUp',
+      ...params,
+    });
+  };
+  const tabCount = () =>
+    evaluateToolbar("document.querySelectorAll('.axioo-tab').length");
+  const activeTabIndex = () =>
+    evaluateToolbar(
+      "[...document.querySelectorAll('.axioo-tab')].findIndex((tab) => tab.classList.contains('axioo-tab-active'))",
+    );
+
+  const tabIds = () =>
+    evaluateToolbar(
+      "[...document.querySelectorAll('.axioo-tab')].map((tab) => tab.dataset.tabId)",
+    );
+  await waitFor(
+    () => evaluateToolbar("Boolean(document.querySelector('.axioo-tab'))"),
+    'first tab id',
+  );
+  const originalId = (await tabIds())[0];
+
+  await evaluateToolbar("document.querySelector('.axioo-tab-new').click()");
+  await waitFor(async () => (await tabCount()) === 2, 'second tab', 15_000);
+  assert.equal(await activeTabIndex(), 1);
+  assert.equal(
+    await evaluateToolbar(
+      "(() => { const widths = [...document.querySelectorAll('.axioo-tab')].map((tab) => Math.round(tab.getBoundingClientRect().width)); return widths.every((width) => width === widths[0]); })()",
+    ),
+    true,
+    'every tab should use the same fixed width',
+  );
+  assert.equal(
+    await evaluateToolbar(
+      "(() => { const tab = document.querySelector('.axioo-tab'); const bounds = tab.getBoundingClientRect(); const close = tab.querySelector('.axioo-tab-close').getBoundingClientRect(); return Math.abs((close.top + close.height / 2) - (bounds.top + bounds.height / 2)) < 1; })()",
+    ),
+    true,
+    'the close button should sit vertically centered on the tab',
+  );
+  assert.equal(
+    await evaluateToolbar(
+      "getComputedStyle(document.querySelector('.axioo-tab-close')).backgroundImage",
+    ),
+    'none',
+    'the close button itself should have no gradient',
+  );
+  assert.equal(
+    await evaluateToolbar(
+      "(() => { const fade = getComputedStyle(document.querySelector('.axioo-tab'), '::after'); return fade.content !== 'none' && fade.backgroundImage.includes('gradient') && Number(fade.width) > 0 && getComputedStyle(document.querySelector('.axioo-tab-close')).zIndex === '1'; })()",
+    ),
+    true,
+    'the tab should paint a gradient fade behind the close button',
+  );
+  const freshId = (await tabIds())[1];
+  const secondTarget = await waitFor(async () => {
+    const response = await fetch(`http://127.0.0.1:${debugPort}/json/list`);
+    const targets = await response.json();
+    return targets.find(
+      (entry) =>
+        entry.type === 'page' &&
+        entry.id !== target.id &&
+        matchesSite(entry.url),
+    );
+  }, 'second tab window');
+  const second = await connectTo(secondTarget);
+  extraSockets.push(second.pageSocket);
+  const secondBridge = await waitFor(
+    () =>
+      second
+        .evaluatePage(
+          '({ fn: typeof window.__axiooFetch, hasApi: Boolean(window.__AXIOO_DESKTOP__), state: document.readyState, href: window.location.href })',
+        )
+        .then((info) => (info?.fn === 'function' ? info : null)),
+    'fetch bridge for the second tab',
+    25_000,
+  );
+  assert.equal(secondBridge.fn, 'function');
+  assert.equal(secondBridge.hasApi, true);
+  assert.equal(
+    await second.evaluatePage('window.__AXIOO_DESKTOP__.version'),
+    1,
+  );
+  const expectedTabTitle = pageTitle.trim() || 'Axioo Store';
+  await waitFor(
+    () =>
+      evaluateToolbar(
+        `document.querySelectorAll('.axioo-tab-title')[1].textContent === ${JSON.stringify(expectedTabTitle)}`,
+      ),
+    'second tab title',
+    20_000,
+  );
+
+  // Reorder the tabs the way a drag-and-drop would, then confirm the order
+  // swapped while the active tab stayed active.
+  assert.equal(
+    await evaluateToolbar(`(() => {
+      const tabs = [...document.querySelectorAll('.axioo-tab')];
+      const dataTransfer = new DataTransfer();
+      tabs[0].dispatchEvent(new DragEvent('dragstart', { bubbles: true, dataTransfer }));
+      const bounds = tabs[1].getBoundingClientRect();
+      const clientX = bounds.left + bounds.width * 0.9;
+      tabs[1].dispatchEvent(new DragEvent('dragover', { bubbles: true, clientX, dataTransfer }));
+      tabs[1].dispatchEvent(new DragEvent('drop', { bubbles: true, clientX, dataTransfer }));
+      tabs[0].dispatchEvent(new DragEvent('dragend', { bubbles: true, dataTransfer }));
+      return true;
+    })()`),
+    true,
+  );
+  await waitFor(
+    async () => {
+      const ids = await tabIds();
+      return ids[0] === freshId && ids[1] === originalId;
+    },
+    'reordered tabs',
+    10_000,
+  );
+  assert.equal(await activeTabIndex(), 0);
+
+  // The reordered tab is active, so its view owns the keyboard shortcuts.
+  await pressCtrl('T', second.pageSocket);
+  await waitFor(async () => (await tabCount()) === 3, 'third tab', 15_000);
+  await pressCtrl('W', second.pageSocket);
+  await waitFor(async () => (await tabCount()) === 2, 'closed tab', 15_000);
+  assert.equal(await activeTabIndex(), 1);
+  assert.equal((await tabIds())[1], originalId);
+
+  await evaluateToolbar(
+    `[...document.querySelectorAll('.axioo-tab')].find((tab) => tab.dataset.tabId === ${JSON.stringify(freshId)}).querySelector('.axioo-tab-close').click()`,
+  );
+  await waitFor(
+    async () => (await tabCount()) === 1,
+    'last extra tab closed',
+    15_000,
+  );
+  assert.equal(await activeTabIndex(), 0);
+  assert.equal((await tabIds())[0], originalId);
+  assert.equal(await evaluate('window.location.href'), initialUrl);
+
   await evaluate(
     "window.history.pushState({}, '', '#titlebar-history-smoke'); true",
   );
@@ -320,12 +559,17 @@ async function main() {
   console.log(
     'Electron startup passed: Axioo Store is isolated and the custom title bar rendered.',
   );
+  console.log(
+    'Tab system passed: tabs open, switch, reorder, close, keep sessions, and share the fetch bridge.',
+  );
 }
 
 main()
   .finally(async () => {
     socket?.close();
     toolbarSocket?.close();
+    for (const extra of extraSockets) extra.close();
+    fs.rmSync(userDataDir, { recursive: true, force: true });
     if (windows) {
       spawnSync('taskkill', ['/pid', String(child.pid), '/T', '/F']);
     } else if (child.pid) {

@@ -113,14 +113,35 @@ function send(
   });
 }
 
-export function registerFetchBridge(site: WebContents): () => void {
+export type FetchBridge = {
+  /** Starts serving requests from one site WebContents. */
+  attach: (site: WebContents) => () => void;
+  /** Stops serving every attached site. */
+  dispose: () => void;
+};
+
+const inflightKey = (site: WebContents, requestId: string) =>
+  `${site.id}:${requestId}`;
+
+function createBridge(): FetchBridge {
+  const sites = new Set<WebContents>();
   const inflight = new Map<string, ClientRequest>();
+
+  const abortSite = (site: WebContents) => {
+    for (const [key, client] of inflight) {
+      if (key.startsWith(`${site.id}:`)) {
+        client.abort();
+        inflight.delete(key);
+      }
+    }
+  };
 
   const handleFetch = async (
     event: Electron.IpcMainInvokeEvent,
     rawRequest: unknown,
   ): Promise<BridgeResponse> => {
-    if (event.sender !== site || site.isDestroyed()) {
+    const site = event.sender;
+    if (!sites.has(site) || site.isDestroyed()) {
       throw new Error('The Axioo fetch bridge only serves the store window.');
     }
 
@@ -142,7 +163,9 @@ export function registerFetchBridge(site: WebContents): () => void {
 
     try {
       return await send(proxyRequest, (client) => {
-        if (proxyRequest.id !== '') inflight.set(proxyRequest.id, client);
+        if (proxyRequest.id !== '') {
+          inflight.set(inflightKey(site, proxyRequest.id), client);
+        }
       });
     } catch (error) {
       const reason = error instanceof Error ? error : new Error(String(error));
@@ -154,25 +177,62 @@ export function registerFetchBridge(site: WebContents): () => void {
       );
       throw reason;
     } finally {
-      if (proxyRequest.id !== '') inflight.delete(proxyRequest.id);
+      if (proxyRequest.id !== '') {
+        inflight.delete(inflightKey(site, proxyRequest.id));
+      }
     }
   };
 
   const handleAbort = (event: Electron.IpcMainEvent, rawId: unknown) => {
-    if (event.sender !== site) return;
+    const site = event.sender;
+    if (!sites.has(site)) return;
     const id = getProxyRequestId(rawId);
     if (id === '') return;
-    inflight.get(id)?.abort();
-    inflight.delete(id);
+    inflight.get(inflightKey(site, id))?.abort();
+    inflight.delete(inflightKey(site, id));
   };
 
   ipcMain.handle(FETCH_CHANNEL, handleFetch);
   ipcMain.on(ABORT_CHANNEL, handleAbort);
 
-  return () => {
-    ipcMain.removeHandler(FETCH_CHANNEL);
-    ipcMain.removeListener(ABORT_CHANNEL, handleAbort);
-    for (const client of inflight.values()) client.abort();
-    inflight.clear();
+  return {
+    attach(site) {
+      sites.add(site);
+      site.once('destroyed', () => {
+        sites.delete(site);
+        abortSite(site);
+      });
+      return () => {
+        sites.delete(site);
+        abortSite(site);
+      };
+    },
+    dispose() {
+      ipcMain.removeHandler(FETCH_CHANNEL);
+      ipcMain.removeListener(ABORT_CHANNEL, handleAbort);
+      for (const client of inflight.values()) client.abort();
+      inflight.clear();
+      sites.clear();
+    },
+  };
+}
+
+// ipcMain.handle allows one registration per channel, so the bridge is shared
+// by every window and reference counted.
+let bridge: FetchBridge | null = null;
+let bridgeUsers = 0;
+
+export function createFetchBridge(): FetchBridge {
+  bridgeUsers += 1;
+  bridge ??= createBridge();
+  const shared = bridge;
+  return {
+    attach: (site) => shared.attach(site),
+    dispose: () => {
+      bridgeUsers -= 1;
+      if (bridgeUsers > 0 || shared !== bridge) return;
+      shared.dispose();
+      bridge = null;
+    },
   };
 }

@@ -5,6 +5,11 @@
   --titlebar-foreground: #1d2b41;
   --titlebar-border: #dfe6ef;
   --titlebar-hover: #e8edf5;
+  --axioo-tab-width: 170px;
+  --tab-active: #ffffff;
+  --tab-inactive: #e2e7ef;
+  --tab-inactive-hover: #d8dfe9;
+  --tab-close-tint: rgb(0 0 0 / 13%);
   background: var(--titlebar-background);
 }
 
@@ -14,11 +19,16 @@
     --titlebar-foreground: #f0f2f5;
     --titlebar-border: #383b40;
     --titlebar-hover: #36393e;
+    --tab-active: #3e4249;
+    --tab-inactive: #232529;
+    --tab-inactive-hover: #3e4249;
+    --tab-close-tint: rgb(255 255 255 / 15%);
   }
 }
 
 body {
   margin: 0;
+  overflow: hidden;
 }
 
 /* !important beats the inline height the library sets on .cet-titlebar */
@@ -50,7 +60,7 @@ body {
 .axioo-toolbar-left {
   position: absolute;
   top: 0;
-  left: 8px;
+  left: 0;
   height: 30px;
   display: flex;
   align-items: center;
@@ -104,29 +114,207 @@ body {
   flex: none;
 }
 
-.axioo-toolbar-center {
-  position: absolute;
-  top: 0;
-  left: 50%;
-  transform: translateX(-50%);
-  height: 30px;
-  max-width: calc(100% - 370px);
-  display: flex;
-  align-items: center;
-  gap: 7px;
-  pointer-events: none;
+.cet-titlebar.cet-mac .axioo-toolbar-left {
+  left: 82px;
 }
 
-.axioo-toolbar-title {
+/* The tab strip lives on the caption row: after the back/forward/menu buttons
+   on the left and before the native window controls on the right. Empty space
+   in the strip is still a drag region so the window can be moved. */
+.axioo-tab-strip {
+  position: fixed;
+  top: 0;
+  left: 96px;
+  height: 30px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding-left: 4px;
+  padding-right: var(--axioo-tabs-right, 8px);
+  background: var(--titlebar-background);
+  -webkit-app-region: drag;
+  /* custom-electron-titlebar paints .cet-titlebar at z-index 99999 with an
+     opaque background, so the strip has to sit above it to be visible. */
+  z-index: 100000;
+}
+
+body.axioo-mac .axioo-tab-strip {
+  left: 178px;
+}
+
+.axioo-tab-strip[hidden] {
+  display: none;
+}
+
+.axioo-tab-list {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.axioo-tab-list::-webkit-scrollbar {
+  display: none;
+}
+
+.axioo-tab {
+  position: relative;
+  /* One constant width for every tab, whatever the title length is. */
+  flex: 0 0 var(--axioo-tab-width);
+  width: var(--axioo-tab-width);
+  min-width: var(--axioo-tab-width);
+  max-width: var(--axioo-tab-width);
+  height: 24px;
+  display: flex;
+  align-items: center;
+  padding: 0 10px 0 10px;
+  border-radius: 6px;
+  color: var(--titlebar-foreground);
+  font-size: 12px;
+  cursor: default;
+  user-select: none;
+  -webkit-app-region: no-drag;
+}
+
+.axioo-tab:hover {
+  background: var(--tab-inactive-hover);
+}
+
+.axioo-tab-active,
+.axioo-tab-active:hover {
+  background: var(--tab-active);
+  box-shadow: 0 1px 2px rgb(0 0 0 / 12%);
+}
+
+.axioo-tab:focus-visible {
+  outline: 2px solid #4d8ae8;
+  outline-offset: 1px;
+}
+
+.axioo-tab-dragging {
+  opacity: 0.5;
+}
+
+.axioo-tab-title {
+  flex: 1;
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  color: var(--titlebar-foreground);
-  font-size: 12px;
-  font-weight: 500;
 }
 
-.cet-titlebar.cet-mac .axioo-toolbar-left {
-  left: 82px;
+/* The close button floats over the label, so fade the text out under it. */
+.axioo-tab:hover .axioo-tab-title,
+.axioo-tab-active:hover .axioo-tab-title {
+  -webkit-mask-image: linear-gradient(
+    90deg,
+    #000 0,
+    #000 calc(100% - 14px),
+    transparent 100%
+  );
+  mask-image: linear-gradient(
+    90deg,
+    #000 0,
+    #000 calc(100% - 14px),
+    transparent 100%
+  );
+}
+
+/* Soft fade behind the close button, painted under it and under the label. */
+.axioo-tab::after {
+  content: '';
+  position: absolute;
+  z-index: 0;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  width: 32px;
+  border-radius: 0 6px 6px 0;
+  background: linear-gradient(90deg, transparent 0%, var(--tab-active) 100%);
+  opacity: 0;
+  pointer-events: none;
+}
+
+.axioo-tab:hover::after,
+.axioo-tab-active::after {
+  opacity: 1;
+}
+
+.axioo-tab-close {
+  position: absolute;
+  z-index: 1;
+  top: 50%;
+  right: 2px;
+  transform: translateY(-50%);
+  width: 18px;
+  height: 18px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: 0;
+  border-radius: 6px;
+  color: inherit;
+  background: transparent;
+  cursor: pointer;
+  opacity: 0;
+  -webkit-app-region: no-drag;
+}
+
+.axioo-tab:hover .axioo-tab-close,
+.axioo-tab-active .axioo-tab-close,
+.axioo-tab-close:focus-visible {
+  opacity: 0.65;
+}
+
+.axioo-tab-close:hover {
+  background: var(--tab-close-tint);
+  opacity: 1;
+}
+
+.axioo-tab-close svg {
+  width: 11px;
+  height: 11px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+}
+
+.axioo-tab-new {
+  flex: none;
+  width: 24px;
+  height: 24px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: 0;
+  border-radius: 6px;
+  color: var(--titlebar-foreground);
+  background: transparent;
+  cursor: pointer;
+  -webkit-app-region: no-drag;
+}
+
+.axioo-tab-new:hover {
+  background: var(--titlebar-hover);
+}
+
+.axioo-tab-new:focus-visible {
+  outline: 2px solid #4d8ae8;
+  outline-offset: 1px;
+}
+
+.axioo-tab-new svg {
+  width: 15px;
+  height: 15px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.8;
+  stroke-linecap: round;
 }
 
