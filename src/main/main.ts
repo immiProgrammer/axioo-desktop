@@ -26,7 +26,12 @@ import {
 import { getSettingsStore } from './settings';
 import startAutoUpdates from './updates';
 
-const TITLEBAR_HEIGHT = 32;
+// Must stay in sync with TOP_TITLEBAR_HEIGHT_WIN in custom-electron-titlebar:
+// the library re-applies setTitleBarOverlay() with that height on every focus
+// and theme change, so anything else fights it and desyncs the caption buttons.
+const TITLEBAR_HEIGHT = 30;
+const MIN_WINDOW_WIDTH = 640;
+const MIN_WINDOW_HEIGHT = 400;
 let mainWindow: BrowserWindow | null = null;
 
 if (process.env.NODE_ENV === 'production') {
@@ -59,8 +64,8 @@ const createWindow = async () => {
     y: windowState.y,
     width: windowState.width,
     height: windowState.height,
-    minWidth: 640,
-    minHeight: 400,
+    minWidth: MIN_WINDOW_WIDTH,
+    minHeight: MIN_WINDOW_HEIGHT,
     titleBarStyle: 'hidden',
     ...(process.platform === 'win32'
       ? {
@@ -214,7 +219,10 @@ const createWindow = async () => {
   const menuBuilder = new MenuBuilder(window, site);
   menuBuilder.buildMenu();
   window.setMenuBarVisibility(false);
-  await setupTitlebarAndAttachToWindow(window);
+  await setupTitlebarAndAttachToWindow(window, {
+    minWidth: MIN_WINDOW_WIDTH,
+    minHeight: MIN_WINDOW_HEIGHT,
+  });
 
   const openExternal = (url: string) => {
     const externalUrl = getExternalUrl(url);

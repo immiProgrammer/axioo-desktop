@@ -21,12 +21,13 @@ body {
   margin: 0;
 }
 
+/* !important beats the inline height the library sets on .cet-titlebar */
 .cet-titlebar,
 .cet-titlebar.cet-windows,
 .cet-titlebar.cet-linux,
 .cet-titlebar.cet-freebsd {
-  height: 32px !important;
-  line-height: 32px !important;
+  height: 30px !important;
+  line-height: 30px !important;
 }
 
 .cet-titlebar .cet-title,
@@ -35,7 +36,7 @@ body {
 }
 
 .cet-titlebar .cet-window-controls {
-  height: 32px !important;
+  height: 30px !important;
 }
 
 .cet-titlebar.cet-windows .cet-window-controls {
@@ -50,7 +51,7 @@ body {
   position: absolute;
   top: 0;
   left: 8px;
-  height: 31px;
+  height: 30px;
   display: flex;
   align-items: center;
   gap: 2px;
@@ -108,7 +109,7 @@ body {
   top: 0;
   left: 50%;
   transform: translateX(-50%);
-  height: 31px;
+  height: 30px;
   max-width: calc(100% - 370px);
   display: flex;
   align-items: center;

@@ -213,13 +213,13 @@ async function main() {
     await evaluateToolbar(
       "getComputedStyle(document.querySelector('.cet-titlebar')).height",
     ),
-    '32px',
+    '30px',
   );
   if (windows) {
     await waitFor(
       () =>
         evaluateToolbar(
-          "navigator.windowControlsOverlay?.visible === true && navigator.windowControlsOverlay.getTitlebarAreaRect().height === 32 && getComputedStyle(document.querySelector('.cet-window-controls')).display === 'none'",
+          "navigator.windowControlsOverlay?.visible === true && navigator.windowControlsOverlay.getTitlebarAreaRect().height === 30 && getComputedStyle(document.querySelector('.cet-window-controls')).display === 'none'",
         ),
       'native Windows caption buttons',
     );
