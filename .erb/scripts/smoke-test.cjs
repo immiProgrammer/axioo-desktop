@@ -221,7 +221,7 @@ async function main() {
   await waitFor(
     () =>
       evaluateToolbar(
-        "(() => { const icon = document.querySelector('.axioo-menu-button .axioo-menu-icon'); return icon && icon.naturalWidth > 0 && icon.getBoundingClientRect().width === 16; })()",
+        "(() => { const icon = document.querySelector('.axioo-menu-button .axioo-menu-icon'); return icon && icon.naturalWidth > 0 && icon.getBoundingClientRect().width === 24; })()",
       ),
     'menu button icon',
   );

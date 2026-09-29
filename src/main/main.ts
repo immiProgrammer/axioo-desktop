@@ -1,5 +1,6 @@
 /* eslint no-console: off, promise/always-return: off */
 import './env';
+import { existsSync } from 'node:fs';
 import path from 'node:path';
 import { app, BrowserWindow, ipcMain, Menu, nativeTheme } from 'electron';
 import { setupTitlebarAndAttachToWindow } from 'custom-electron-titlebar/main';
@@ -15,10 +16,18 @@ import startAutoUpdates from './updates';
 
 const MIN_WINDOW_WIDTH = 640;
 const MIN_WINDOW_HEIGHT = 400;
-// Only present in the repo: a packaged build takes its icon from the
-// executable, so the window option is skipped there.
-const DEV_ICON = path.join(__dirname, '../../assets/icon.png');
 let mainWindow: BrowserWindow | null = null;
+
+/**
+ * A packaged build carries the icon in the executable, so only development
+ * needs one from disk. `app.getAppPath()` is the project root in dev, which
+ * beats guessing at the build's output depth.
+ */
+function developmentIcon(): string | undefined {
+  if (app.isPackaged) return undefined;
+  const icon = path.join(app.getAppPath(), 'assets', 'icon.png');
+  return existsSync(icon) ? icon : undefined;
+}
 
 if (process.env.NODE_ENV === 'production') {
   process.setSourceMapsEnabled(true);
@@ -39,6 +48,7 @@ const createWindow = async () => {
     defaultHeight: 728,
   });
 
+  const icon = developmentIcon();
   const window = new BrowserWindow({
     show: false,
     x: windowState.x,
@@ -47,7 +57,7 @@ const createWindow = async () => {
     height: windowState.height,
     minWidth: MIN_WINDOW_WIDTH,
     minHeight: MIN_WINDOW_HEIGHT,
-    ...(app.isPackaged ? {} : { icon: DEV_ICON }),
+    ...(icon ? { icon } : {}),
     titleBarStyle: 'hidden',
     ...(process.platform === 'win32'
       ? {
