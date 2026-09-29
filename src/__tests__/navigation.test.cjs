@@ -9,6 +9,8 @@ const {
   createDebouncedUrlSave,
   getExternalUrl,
   getInternalUrl,
+  getRestorableStoreUrl,
+  isGoogleAuthUrl,
   getStoreUrl,
   getStartupUrl,
   HOME_URL,
@@ -51,44 +53,21 @@ test('a dev base URL only keeps its own host and ports inside the app', () => {
   assert.equal(getStartupUrl('http://localhost:3000/cart', dev), dev + 'cart');
   assert.equal(getStartupUrl('https://axioo.store/cart', dev), dev);
   assert.equal(getStartupUrl(undefined, dev), dev);
-  assert.equal(
-    getInternalUrl('https://accounts.google.com/o/oauth2', dev),
-    'https://accounts.google.com/o/oauth2',
-  );
+  assert.equal(getInternalUrl('https://accounts.google.com/o/oauth2', dev), null);
 });
 
-test('Google account sign-in redirects stay in the app', () => {
-  assert.equal(
-    getInternalUrl('https://accounts.google.com/o/oauth2'),
-    'https://accounts.google.com/o/oauth2',
-  );
-  assert.equal(
-    getInternalUrl(
-      'https://accounts.google.com/o/oauth2/v2/auth?client_id=abc',
-    ),
-    'https://accounts.google.com/o/oauth2/v2/auth?client_id=abc',
-  );
-  assert.equal(
-    getInternalUrl(
-      'https://accounts.google.com/v3/signin/identifier?client_id=abc',
-    ),
-    'https://accounts.google.com/v3/signin/identifier?client_id=abc',
-  );
-  assert.equal(
-    getInternalUrl('https://accounts.google.com/signin/oauth/legacy/consent'),
-    'https://accounts.google.com/signin/oauth/legacy/consent',
-  );
-  assert.equal(getInternalUrl('http://accounts.google.com/o/oauth2'), null);
-  assert.equal(
-    getInternalUrl('https://accounts.google.com:444/o/oauth2'),
-    null,
-  );
-  assert.equal(
-    getInternalUrl('https://accounts.google.com.evil.test/o/oauth2'),
-    null,
-  );
-  assert.equal(getInternalUrl('https://mail.google.com/'), null);
-  assert.equal(getStoreUrl('https://accounts.google.com/o/oauth2'), null);
+test('Google authorization redirects are intercepted for browser sign-in', () => {
+  assert.equal(isGoogleAuthUrl('https://accounts.google.com/o/oauth2/v2/auth'), true);
+  assert.equal(getInternalUrl('https://accounts.google.com/o/oauth2/v2/auth'), null);
+  assert.equal(isGoogleAuthUrl('http://accounts.google.com/o/oauth2'), false);
+  assert.equal(isGoogleAuthUrl('https://accounts.google.com.evil.test/'), false);
+  assert.equal(isGoogleAuthUrl('https://mail.google.com/'), false);
+});
+
+test('handoff URLs are never restored on startup', () => {
+  assert.equal(getRestorableStoreUrl('https://axioo.store/desktop-login?token=secret'), null);
+  assert.equal(getRestorableStoreUrl('https://axioo.store/api/auth/callback/google?code=secret'), null);
+  assert.equal(getStartupUrl('https://axioo.store/desktop-login?token=secret'), HOME_URL);
 });
 
 test('invalid or external saved URLs start at the Axioo home page', () => {

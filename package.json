@@ -79,6 +79,12 @@
   "build": {
     "productName": "Axioo Desktop",
     "appId": "com.axioo.desktop",
+    "protocols": [
+      {
+        "name": "Axioo Desktop sign-in",
+        "schemes": ["axioo-desktop"]
+      }
+    ],
     "asar": true,
     "afterSign": ".erb/scripts/notarize.js",
     "asarUnpack": "**\\*.{node,dll}",

@@ -32,8 +32,37 @@ export function getStartupUrl(
   baseUrl: string = HOME_URL,
 ): string {
   return typeof savedUrl === 'string'
-    ? getStoreUrl(savedUrl, baseUrl) || baseUrl
+    ? getRestorableStoreUrl(savedUrl, baseUrl) || baseUrl
     : baseUrl;
+}
+
+export function getRestorableStoreUrl(
+  rawUrl: string,
+  baseUrl: string = HOME_URL,
+): string | null {
+  const storeUrl = getStoreUrl(rawUrl, baseUrl);
+  if (!storeUrl) return null;
+  const path = new URL(storeUrl).pathname;
+  if (
+    path === '/desktop-login' ||
+    path === '/desktop-google-start' ||
+    path.startsWith('/api/auth/')
+  )
+    return null;
+  return storeUrl;
+}
+
+export function isGoogleAuthUrl(rawUrl: string): boolean {
+  try {
+    const url = new URL(rawUrl);
+    return (
+      url.protocol === 'https:' &&
+      url.hostname === 'accounts.google.com' &&
+      !url.port
+    );
+  } catch {
+    return false;
+  }
 }
 
 export function getStoreUrl(
@@ -64,19 +93,6 @@ export function getInternalUrl(
 ): string | null {
   const storeUrl = getStoreUrl(rawUrl, baseUrl);
   if (storeUrl) return storeUrl;
-
-  try {
-    const url = new URL(rawUrl);
-    if (
-      url.protocol === 'https:' &&
-      url.hostname === 'accounts.google.com' &&
-      !url.port
-    ) {
-      return url.href;
-    }
-  } catch {
-    // Invalid URLs cannot be opened inside the app.
-  }
   return null;
 }
 
@@ -98,7 +114,7 @@ export function getSessionTabs(
 
   const storeUrls = urls
     .filter((url): url is string => typeof url === 'string')
-    .map((url) => getStoreUrl(url, baseUrl))
+    .map((url) => getRestorableStoreUrl(url, baseUrl))
     .filter((url): url is string => url !== null);
   if (storeUrls.length === 0) return null;
 

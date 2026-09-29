@@ -18,9 +18,10 @@ import {
   createDebouncedSave,
   getExternalUrl,
   getInternalUrl,
+  getRestorableStoreUrl,
+  isGoogleAuthUrl,
   getSessionTabs,
   getStartupUrl,
-  getStoreUrl,
 } from './navigation';
 import { getSettingsStore } from './settings';
 
@@ -75,6 +76,7 @@ export class TabManager {
   private recentlyClosed: string[] = [];
 
   private disposed = false;
+  private readonly onGoogleSignIn: (sourceUrl: string) => void;
 
   private readonly persist = createDebouncedSave<PersistedTabs>(
     (state) => {
@@ -86,9 +88,14 @@ export class TabManager {
     5_000,
   );
 
-  constructor(window: BrowserWindow, fetchBridge: FetchBridge) {
+  constructor(
+    window: BrowserWindow,
+    fetchBridge: FetchBridge,
+    onGoogleSignIn: (sourceUrl: string) => void,
+  ) {
     this.window = window;
     this.fetchBridge = fetchBridge;
+    this.onGoogleSignIn = onGoogleSignIn;
     ipcMain.on(TAB_COMMAND_CHANNEL, this.onTabCommand);
     this.window.on('resize', this.layout);
     this.window.on('enter-full-screen', this.onFullScreenChange);
@@ -102,6 +109,10 @@ export class TabManager {
   get activeSite(): WebContents | null {
     const tab = this.activeId ? this.tabs.get(this.activeId) : undefined;
     return tab && !tab.site.isDestroyed() ? tab.site : null;
+  }
+
+  ownsSite(site: WebContents): boolean {
+    return [...this.tabs.values()].some((tab) => tab.site === site);
   }
 
   reloadAll(): void {
@@ -254,7 +265,7 @@ export class TabManager {
 
   private trackUrl(tab: Tab, url: string) {
     tab.url = url;
-    const storeUrl = getStoreUrl(url);
+    const storeUrl = getRestorableStoreUrl(url);
     if (!storeUrl) return;
     tab.title = this.getTabTitle(tab, storeUrl);
     if (this.activeId === tab.id) this.lastVisitedUrl = storeUrl;
@@ -298,8 +309,8 @@ export class TabManager {
     this.order.push(tab.id);
     this.wireTab(tab);
     if (activate) this.activate(tab.id);
-    void site.loadURL(url).catch((error: unknown) => {
-      log.error('Failed to load Axioo Store', url, error);
+    void site.loadURL(url).catch(() => {
+      log.error('Failed to load Axioo Store');
     });
     return tab;
   }
@@ -348,7 +359,7 @@ export class TabManager {
       'did-fail-load',
       (_event, errorCode, errorDescription, validatedURL, isMainFrame) => {
         if (!isMainFrame || errorCode === -3) return;
-        log.error('Failed to load page', errorDescription, validatedURL);
+        log.error('Failed to load page', errorDescription);
         if (!this.window.isDestroyed() && !this.window.isVisible()) {
           this.window.show();
         }
@@ -362,6 +373,10 @@ export class TabManager {
       this.showLinkMenu(params.linkURL);
     });
     site.setWindowOpenHandler(({ url }) => {
+      if (isGoogleAuthUrl(url)) {
+        this.onGoogleSignIn(site.getURL());
+        return { action: 'deny' };
+      }
       const internalUrl = getInternalUrl(url);
       setImmediate(() => {
         if (this.disposed) return;
@@ -377,6 +392,11 @@ export class TabManager {
     url: string,
     site: WebContents,
   ) {
+    if (isGoogleAuthUrl(url)) {
+      event.preventDefault();
+      this.onGoogleSignIn(site.getURL());
+      return;
+    }
     const internalUrl = getInternalUrl(url);
     if (internalUrl === url) return;
 
@@ -387,8 +407,8 @@ export class TabManager {
     }
     setImmediate(() => {
       if (this.disposed || site.isDestroyed()) return;
-      void site.loadURL(internalUrl).catch((error: unknown) => {
-        log.error('Failed to load internal URL', error);
+      void site.loadURL(internalUrl).catch(() => {
+        log.error('Failed to load internal URL');
       });
     });
   }
@@ -396,11 +416,11 @@ export class TabManager {
   private openExternal(url: string) {
     const externalUrl = getExternalUrl(url);
     if (externalUrl) {
-      void shell.openExternal(externalUrl).catch((error: unknown) => {
-        log.error('Failed to open external URL', externalUrl, error);
+      void shell.openExternal(externalUrl).catch(() => {
+        log.error('Failed to open external URL');
       });
     } else {
-      log.warn('Ignoring invalid external URL', url);
+      log.warn('Ignoring invalid external URL');
     }
   }
 
@@ -474,7 +494,7 @@ export class TabManager {
       this.attached.add(tab.id);
     }
     this.activeId = tab.id;
-    const storeUrl = getStoreUrl(tab.url);
+    const storeUrl = getRestorableStoreUrl(tab.url);
     if (storeUrl) this.lastVisitedUrl = storeUrl;
     this.layout();
     tab.site.focus();
@@ -496,7 +516,7 @@ export class TabManager {
     this.tabs.delete(id);
     if (tab) {
       this.detach(tab);
-      const storeUrl = getStoreUrl(tab.url);
+      const storeUrl = getRestorableStoreUrl(tab.url);
       if (storeUrl && this.recentlyClosed.length < MAX_RECENTLY_CLOSED) {
         this.recentlyClosed.push(storeUrl);
       }
@@ -596,7 +616,7 @@ export class TabManager {
           !tab.site.isDestroyed() && tab.site.getURL()
             ? tab.site.getURL()
             : tab.url;
-        return getStoreUrl(currentUrl);
+        return getRestorableStoreUrl(currentUrl);
       })
       .filter((url): url is string => url !== null);
     const activeIndex = this.activeId ? this.order.indexOf(this.activeId) : 0;
@@ -625,7 +645,7 @@ export class TabManager {
     const urls = session?.urls ?? [getStartupUrl(settings.get('lastUrl'))];
     urls.slice(0, MAX_TABS).forEach((url) => this.createTab(url, false));
     if (this.order.length === 0) this.createTab(HOME_URL, false);
-    this.lastVisitedUrl = getStoreUrl(urls[urls.length - 1] ?? '');
+    this.lastVisitedUrl = getRestorableStoreUrl(urls[urls.length - 1] ?? '');
     this.activate(
       this.order[Math.min(session?.activeIndex ?? 0, this.order.length - 1)] ??
         this.order[0] ??

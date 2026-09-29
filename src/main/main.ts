@@ -1,15 +1,30 @@
 /* eslint no-console: off, promise/always-return: off */
 import './env';
 import { existsSync } from 'node:fs';
+import { randomBytes } from 'node:crypto';
 import path from 'node:path';
-import { app, BrowserWindow, ipcMain, Menu, nativeTheme } from 'electron';
+import {
+  app,
+  BrowserWindow,
+  clipboard,
+  ipcMain,
+  Menu,
+  nativeTheme,
+  shell,
+} from 'electron';
 import { setupTitlebarAndAttachToWindow } from 'custom-electron-titlebar/main';
 import log from 'electron-log';
 import windowStateKeeper from 'electron-window-state';
 import { createFetchBridge } from './fetch-bridge';
+import {
+  DESKTOP_ATTEMPT,
+  parseDesktopLoginLink,
+  safeCallbackUrl,
+} from './desktop-auth';
+import type { DesktopLoginLink } from './desktop-auth';
 import { CAPTION_HEIGHT } from './layout';
 import MenuBuilder from './menu';
-import { getStoreUrl } from './navigation';
+import { getStoreUrl, HOME_URL } from './navigation';
 import { getSettingsStore } from './settings';
 import { TabManager } from './tabs';
 import initAutoUpdates, { checkForUpdates } from './updates';
@@ -17,6 +32,108 @@ import initAutoUpdates, { checkForUpdates } from './updates';
 const MIN_WINDOW_WIDTH = 640;
 const MIN_WINDOW_HEIGHT = 400;
 let mainWindow: BrowserWindow | null = null;
+let tabManager: TabManager | null = null;
+let pendingLink =
+  process.argv.find((arg) => arg.startsWith('axioo-desktop://')) ?? null;
+let pendingCompletion: DesktopLoginLink | null = null;
+
+function receiveDesktopLink(raw: string) {
+  const link = parseDesktopLoginLink(raw);
+  if (!link) return;
+  if (!tabManager || !mainWindow) {
+    pendingLink = raw;
+    return;
+  }
+  const expected = getSettingsStore().get('desktopLogin');
+  if (
+    !expected ||
+    expected.expiresAt < Date.now() ||
+    expected.attempt !== link.attempt ||
+    expected.callbackUrl !== link.callbackUrl
+  ) {
+    log.warn('Ignored desktop sign-in link without a matching attempt');
+    return;
+  }
+  pendingCompletion = link;
+  const page = new URL('/desktop-login', HOME_URL);
+  page.searchParams.set('attempt', link.attempt);
+  page.searchParams.set('callbackUrl', link.callbackUrl);
+  if (!tabManager.newTab(page.href)) {
+    void tabManager.activeSite?.loadURL(page.href).catch(() => {
+      log.error('Could not open desktop sign-in page');
+    });
+  }
+  if (mainWindow.isMinimized()) mainWindow.restore();
+  mainWindow.show();
+  mainWindow.focus();
+}
+
+async function startGoogleLogin(sourceUrl: string, rawCallback: unknown) {
+  if (!getStoreUrl(sourceUrl)) throw new Error('Invalid Axioo page');
+  const callbackUrl = safeCallbackUrl(
+    typeof rawCallback === 'string' ? rawCallback : '/',
+    sourceUrl,
+  );
+  if (!callbackUrl || callbackUrl.length > 512) {
+    throw new Error('Invalid sign-in return URL');
+  }
+  const attempt = randomBytes(32).toString('base64url');
+  getSettingsStore().set('desktopLogin', {
+    attempt,
+    callbackUrl,
+    expiresAt: Date.now() + 10 * 60_000,
+  });
+  const startUrl = new URL('/desktop-google-start', HOME_URL);
+  startUrl.searchParams.set('attempt', attempt);
+  if (callbackUrl !== HOME_URL) {
+    startUrl.searchParams.set('callbackUrl', callbackUrl);
+  }
+  try {
+    await shell.openExternal(startUrl.href);
+    return { opened: true };
+  } catch {
+    clipboard.writeText(startUrl.href);
+    return { opened: false };
+  }
+}
+
+function registerDesktopLoginHandlers() {
+  ipcMain.handle('desktop-login:start', async (event, rawCallback: unknown) => {
+    if (event.sender !== tabManager?.activeSite) {
+      throw new Error('Desktop sign-in must start from the active Axioo tab');
+    }
+    return startGoogleLogin(event.sender.getURL(), rawCallback);
+  });
+
+  ipcMain.handle('desktop-login:take', (event) => {
+    if (event.sender !== tabManager?.activeSite) return null;
+    try {
+      const url = new URL(event.sender.getURL());
+      if (url.pathname !== '/desktop-login') return null;
+    } catch {
+      return null;
+    }
+    const result = pendingCompletion;
+    pendingCompletion = null;
+    return result;
+  });
+
+  ipcMain.on('desktop-login:finish', (event, attempt: unknown) => {
+    if (
+      event.sender !== tabManager?.activeSite ||
+      typeof attempt !== 'string' ||
+      !DESKTOP_ATTEMPT.test(attempt)
+    )
+      return;
+    try {
+      if (new URL(event.sender.getURL()).pathname !== '/desktop-login') return;
+    } catch {
+      return;
+    }
+    const saved = getSettingsStore().get('desktopLogin');
+    if (saved?.attempt === attempt) getSettingsStore().delete('desktopLogin');
+  });
+}
 
 /**
  * A packaged build carries the icon in the executable, so only development
@@ -91,7 +208,18 @@ const createWindow = async () => {
   nativeTheme.on('updated', updateWindowTheme);
 
   const fetchBridge = createFetchBridge();
-  const tabs = new TabManager(window, fetchBridge);
+  const tabs = new TabManager(window, fetchBridge, (sourceUrl) => {
+    let callbackUrl = '/';
+    try {
+      callbackUrl = new URL(sourceUrl).searchParams.get('callbackUrl') ?? '/';
+    } catch {
+      // The normal sign-in button supplies the callback directly.
+    }
+    void startGoogleLogin(sourceUrl, callbackUrl).catch(() => {
+      log.warn('Could not start Google sign-in in the default browser');
+    });
+  });
+  tabManager = tabs;
 
   const onToolbarCommand = (
     event: Electron.IpcMainEvent,
@@ -107,7 +235,7 @@ const createWindow = async () => {
 
   const onInternalUrlQuery = (event: Electron.IpcMainEvent, url: unknown) => {
     event.returnValue =
-      tabs.activeSite === event.sender && typeof url === 'string'
+      tabs.ownsSite(event.sender) && typeof url === 'string'
         ? getStoreUrl(url) !== null
         : false;
   };
@@ -118,6 +246,7 @@ const createWindow = async () => {
     ipcMain.removeListener('toolbar:command', onToolbarCommand);
     ipcMain.removeListener('axioo:internal-url', onInternalUrlQuery);
     fetchBridge.dispose();
+    tabManager = null;
     mainWindow = null;
   });
 
@@ -142,6 +271,11 @@ const createWindow = async () => {
   }
   if (process.env.START_MINIMIZED) window.minimize();
   else window.show();
+  if (pendingLink) {
+    const link = pendingLink;
+    pendingLink = null;
+    receiveDesktopLink(link);
+  }
 };
 
 app.on('window-all-closed', () => {
@@ -160,17 +294,33 @@ function onActivate() {
   }
 }
 
-app
-  .whenReady()
-  .then(async () => {
-    getSettingsStore();
-    await createWindow();
-    if (mainWindow) {
-      initAutoUpdates(mainWindow);
-    }
-    app.on('activate', onActivate);
-  })
-  .catch((error: unknown) => {
-    reportWindowError(error);
-    app.quit();
+const hasSingleInstanceLock = app.requestSingleInstanceLock();
+if (!hasSingleInstanceLock) {
+  app.quit();
+} else {
+  app.on('second-instance', (_event, args) => {
+    const link = args.find((arg) => arg.startsWith('axioo-desktop://'));
+    if (link) receiveDesktopLink(link);
+    else mainWindow?.focus();
   });
+  app.on('open-url', (event, url) => {
+    event.preventDefault();
+    receiveDesktopLink(url);
+  });
+  app
+    .whenReady()
+    .then(async () => {
+      getSettingsStore();
+      registerDesktopLoginHandlers();
+      if (app.isPackaged) app.setAsDefaultProtocolClient('axioo-desktop');
+      await createWindow();
+      if (mainWindow) {
+        initAutoUpdates(mainWindow);
+      }
+      app.on('activate', onActivate);
+    })
+    .catch((error: unknown) => {
+      reportWindowError(error);
+      app.quit();
+    });
+}

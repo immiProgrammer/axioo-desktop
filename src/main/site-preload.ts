@@ -3,6 +3,9 @@ import { ipcRenderer } from 'electron';
 const FETCH_CHANNEL = 'axioo:fetch';
 const ABORT_CHANNEL = 'axioo:fetch:abort';
 const INTERNAL_URL_CHANNEL = 'axioo:internal-url';
+const DESKTOP_START_CHANNEL = 'desktop-login:start';
+const DESKTOP_TAKE_CHANNEL = 'desktop-login:take';
+const DESKTOP_FINISH_CHANNEL = 'desktop-login:finish';
 const BRIDGE_VERSION = 1;
 const NULL_BODY_STATUS = new Set([101, 103, 204, 205, 304]);
 const BODYLESS_METHODS = new Set(['GET', 'HEAD']);
@@ -35,6 +38,13 @@ declare global {
     __AXIOO_DESKTOP__: {
       version: number;
       fetch: Window['__axiooFetch'];
+      startGoogleLogin: (callbackUrl: string) => Promise<{ opened: boolean }>;
+      takeDesktopLogin: () => Promise<{
+        userId: string;
+        token: string;
+        attempt: string;
+      } | null>;
+      finishDesktopLogin: (attempt: string) => void;
     };
   }
 }
@@ -239,7 +249,15 @@ if (isStorePage()) {
     configurable: true,
   });
   Object.defineProperty(window, '__AXIOO_DESKTOP__', {
-    value: { version: BRIDGE_VERSION, fetch: axiooFetch },
+    value: {
+      version: BRIDGE_VERSION,
+      fetch: axiooFetch,
+      startGoogleLogin: (callbackUrl: string) =>
+        ipcRenderer.invoke(DESKTOP_START_CHANNEL, callbackUrl),
+      takeDesktopLogin: () => ipcRenderer.invoke(DESKTOP_TAKE_CHANNEL),
+      finishDesktopLogin: (attempt: string) =>
+        ipcRenderer.send(DESKTOP_FINISH_CHANNEL, attempt),
+    },
     writable: false,
     configurable: false,
   });

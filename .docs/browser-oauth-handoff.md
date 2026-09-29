@@ -1,61 +1,27 @@
 # Browser sign-in handoff for Axioo Desktop
 
-This is an implementation plan, not an enabled feature. The goal is to start Google sign-in from Axioo Desktop, complete it in the user's default browser, and return to the Electron window with an Axioo session.
+## Implemented flow
 
-## Current behavior
+1. The shared Google button checks `window.__AXIOO_DESKTOP__`. In the desktop app it asks Electron to start browser sign-in, passing the original safe callback URL. Ordinary browser sign-in keeps its existing behavior.
+2. Electron creates a random attempt ID, saves it with the expected callback URL and a ten-minute expiry, then opens `https://axioo.store/desktop-google-start` in the default browser. If opening fails, Electron copies that Axioo URL to the clipboard.
+3. The browser start page calls Better Auth's Google sign-in with `callbackURL` set to `/desktop-login?attempt=...&callbackUrl=...`. Google's registered callback stays `/api/auth/callback/google`. The OAuth state cookie and Google pages remain in the default browser.
+4. After Better Auth redirects to `/desktop-login`, that browser page requests a handoff token. The Elysia token endpoint requires a valid Axioo session with `loginMethod=google`. Redis stores the user ID, attempt ID, and validated callback URL for two minutes. Each user has one active token; a new token invalidates the previous one.
+5. The browser page opens `axioo-desktop://auth/complete` with the user ID, token, attempt ID, and callback URL. It also shows an **Open Axioo Desktop** button.
+6. Electron accepts the link only when the attempt ID and callback URL match its pending attempt. It opens its own `/desktop-login` page and passes the token through a one-time preload call, keeping the token out of the page URL and saved tabs.
+7. The desktop page posts the token and attempt ID to `/api/auth/desktop-redeem`. The server atomically consumes the Redis token, reads the user ID from the stored record, creates a Better Auth session, and sets its cookie in Electron's web session. The page verifies `/api/auth/get-session`, then uses `getSafeCallbackUrl()` to navigate to the original destination or `/`.
 
-- The main window loads `https://axioo.store/`. `src/main/navigation.ts` currently keeps `axioo.store` and `accounts.google.com` inside Electron; other links go through `shell.openExternal()` in `src/main/main.ts`.
-- The observed Google request redirects to `https://axioo.store/api/auth/callback/google`. That callback currently runs in whichever browser received the Google redirect.
-- The system browser and Electron have separate cookie stores. Completing the web callback in the system browser does not sign in Electron automatically. Opening only the generated Google URL externally can also split an OAuth transaction that began in Electron.
-- `src/main/main.ts` currently logs complete external URLs. This must be changed before any handoff URL contains a login code.
+The user ID in the deep link is not trusted as authorization. The server's token record decides which user signs in. Expired and reused tokens fail. A denied Google sign-in does not issue a token.
 
-## Proposed flow
+## Code locations
 
-Keep the existing **web** Google OAuth client and its Axioo server callback. Add a separate, one-time handoff from the website to the desktop app. Start the entire web OAuth transaction in the default browser rather than opening a Google URL generated inside Electron.
+- Website button: `C:/code/axioo/src/components/auth/google-sign-in-button.tsx`
+- Browser start and completion pages: `C:/code/axioo/src/app/(public)/desktop-google-start/page.tsx` and `C:/code/axioo/src/app/(public)/desktop-login/page.tsx`
+- Token route and Better Auth redemption: `C:/code/axioo/src/app/api/v1/[[...slug]]/routes/desktop-auth.ts` and `C:/code/axioo/src/server/better-auth/desktop-plugin.ts`
+- Electron protocol, IPC, and navigation: `C:/code/axioo-desktop/src/main/main.ts`, `site-preload.ts`, `desktop-auth.ts`, and `tabs.ts`
 
-1. Electron asks the Axioo server to create a pending desktop login transaction. Keep a random correlation value in Electron memory until this attempt ends.
-2. Electron opens an Axioo **start** URL with `shell.openExternal()`. The browser visits Axioo first, then the website starts Google OAuth in that same browser session.
-3. Google redirects back to the existing Axioo web callback. The server verifies OAuth state, completes sign-in in the browser, and creates a short-lived, single-use handoff code tied to the pending desktop transaction and signed-in user.
-4. The browser's completion page opens a custom link such as `axioo-desktop://auth/complete?code=...&state=...`. Provide an **Open Axioo Desktop** button if automatic opening is blocked or needs user confirmation.
-5. Electron receives the link, verifies the expected scheme, path, code format, and correlation value, then focuses its existing window.
-6. Electron redeems the handoff code with the Axioo server. The server establishes an Axioo session in **Electron's** browser session, for example through a dedicated HTTPS completion endpoint that sets a `Secure`, `HttpOnly` cookie and redirects to a clean store URL.
+## Release verification still needed
 
-The deep link carries only a short-lived handoff code. Do not put Google authorization codes, Google access tokens, refresh tokens, or the Axioo session cookie in the deep link. A browser cookie must not be copied into Electron.
-
-## Website and authentication server work
-
-- [ ] Confirm how the current `/api/auth/callback/google` implementation stores OAuth state and the web session. Ensure the browser starts and finishes that transaction without relying on Electron cookies.
-- [ ] Add a desktop login start endpoint and a pending transaction record with an expiry, random correlation value, and cancellation handling. Limit outstanding attempts.
-- [ ] After successful Google callback, create a one-use handoff code bound to that transaction and user. Redeem it atomically; reject expired, reused, mismatched, or cancelled codes.
-- [ ] Add a browser completion page that invokes the desktop deep link and has a manual return button. Show an ordinary error and retry path if sign-in or handoff fails.
-- [ ] Add a desktop completion endpoint that creates the session in Electron's web session and immediately redirects to a clean `https://axioo.store/` page. Use `Cache-Control: no-store` and `Referrer-Policy: no-referrer` on code-bearing responses.
-- [ ] Decide whether the website's existing auth library supports creating a desktop session this way or needs a dedicated session-exchange endpoint. Do not assume its browser callback alone will authenticate the app.
-
-## Electron work
-
-- [ ] Register a unique `axioo-desktop://` protocol for installed builds and configure installer/package metadata for Windows, macOS, and Linux as needed. Keep development registration separate from the installed app so they do not compete for the same protocol.
-- [ ] Add a single-instance lock. Receive deep links from startup arguments and `second-instance` on Windows/Linux, and `open-url` on macOS. Restore and focus the main window when a valid link arrives.
-- [ ] Validate the incoming deep link and match its correlation value to the pending login before redeeming the code. Ignore unrelated or replayed links.
-- [ ] Route the sign-in action to the browser-based Axioo start URL. When switching to this flow, stop sending Google OAuth pages into the Electron window; leave ordinary store navigation inside it.
-- [ ] After handoff, load the server's desktop completion endpoint in the main window, then verify the authenticated store page loads. Keep the final URL on `axioo.store`.
-- [ ] Redact login codes, OAuth `state`, and similar query parameters from terminal and file logs. The current external-link log prints full URLs.
-- [ ] Exclude OAuth callback and desktop completion URLs from `lastUrl` persistence, even though they are under `axioo.store`. Restore a normal store URL on the next launch.
-- [ ] Handle timeout, cancellation, browser closed without signing in, app already open, app cold start, and a second login attempt while one is pending.
-
-## Verification before release
-
-- [ ] Test the **packaged and installed** app's protocol registration; a development run alone does not prove OS link handling.
-- [ ] Test Windows first, then macOS and Linux if those builds will be released. Verify both a running app and a closed app return to the same authenticated store session.
-- [ ] Test the default browser with multiple Google profiles, denied consent, network loss, expired/reused handoff codes, a forged deep link, and two sign-in attempts.
-- [ ] Confirm the browser's Axioo session and Electron's Axioo session are independent, and that no auth code appears in saved settings, logs, or the final address bar.
-
-## Alternative
-
-A separate **Desktop app** Google OAuth client can use the system browser, PKCE, and a temporary `127.0.0.1` loopback listener to return the Google authorization code directly to Electron. The Axioo backend would still need to turn that result into an Axioo session for the embedded store. For this website wrapper, the web callback plus one-time desktop handoff above reuses more of the current sign-in flow.
-
-## References
-
-- [Google OAuth policy on embedded user agents](https://developers.google.com/identity/protocols/oauth2/policies)
-- [Google OAuth for desktop apps, PKCE, and loopback redirects](https://developers.google.com/identity/protocols/oauth2/native-app)
-- [Electron deep links and platform-specific callbacks](https://www.electronjs.org/docs/latest/tutorial/launch-app-from-url-in-another-app)
-- [Electron sessions and cookies](https://www.electronjs.org/docs/latest/api/session)
+- Install the Windows installer and verify that `axioo-desktop://` returns to both a running and closed app. The Windows directory and NSIS installer build successfully, but an installed protocol handler has not been exercised yet.
+- Complete a live Google sign-in against a configured Axioo server with Redis. Check the browser and Electron sessions separately.
+- Repeat with denied consent, token expiry/reuse, a forged link, two attempts, and a callback into a tenant subdomain.
+- Verify macOS and Linux protocol registration on those platforms before releasing those builds.
