@@ -433,11 +433,33 @@ async function main() {
   );
   assert.equal(
     await evaluateToolbar(
-      "(() => { const fade = getComputedStyle(document.querySelector('.axioo-tab'), '::after'); return fade.content !== 'none' && fade.backgroundImage.includes('gradient') && Number(fade.width) > 0 && getComputedStyle(document.querySelector('.axioo-tab-close')).zIndex === '1'; })()",
+      "(() => { const active = document.querySelector('.axioo-tab-active'); const idle = [...document.querySelectorAll('.axioo-tab')].find((tab) => !tab.classList.contains('axioo-tab-active')); const fade = getComputedStyle(active, '::after'); return fade.content !== 'none' && fade.backgroundImage.includes('gradient') && parseFloat(fade.width) > 0 && getComputedStyle(active.querySelector('.axioo-tab-close')).zIndex === '1' && Number(fade.opacity) === 1 && Number(getComputedStyle(active.querySelector('.axioo-tab-title')).opacity) < 1 && Number(getComputedStyle(idle, '::after').opacity) === 0 && Number(getComputedStyle(idle.querySelector('.axioo-tab-title')).opacity) === 1; })()",
     ),
     true,
-    'the tab should paint a gradient fade behind the close button',
+    'the active tab should paint a gradient fade behind the close button',
   );
+  await command(toolbarSocket, 'DOM.enable');
+  await command(toolbarSocket, 'CSS.enable');
+  const chromeRoot = await command(toolbarSocket, 'DOM.getDocument', { depth: -1 });
+  const idleTabNode = await command(toolbarSocket, 'DOM.querySelector', {
+    nodeId: chromeRoot.root.nodeId,
+    selector: '.axioo-tab:not(.axioo-tab-active)',
+  });
+  await command(toolbarSocket, 'CSS.forcePseudoState', {
+    nodeId: idleTabNode.nodeId,
+    forcedPseudoClasses: ['hover'],
+  });
+  assert.equal(
+    await evaluateToolbar(
+      "(() => { const idle = document.querySelector('.axioo-tab:not(.axioo-tab-active)'); return Number(getComputedStyle(idle, '::after').opacity) === 1 && Number(getComputedStyle(idle.querySelector('.axioo-tab-title')).opacity) < 1 && Number(getComputedStyle(idle.querySelector('.axioo-tab-close')).opacity) > 0; })()",
+    ),
+    true,
+    'hovering an idle tab should reveal the fade, soften the title and show the close button',
+  );
+  await command(toolbarSocket, 'CSS.forcePseudoState', {
+    nodeId: idleTabNode.nodeId,
+    forcedPseudoClasses: [],
+  });
   const freshId = (await tabIds())[1];
   const secondTarget = await waitFor(async () => {
     const response = await fetch(`http://127.0.0.1:${debugPort}/json/list`);
