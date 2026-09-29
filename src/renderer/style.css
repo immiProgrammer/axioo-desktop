@@ -337,3 +337,60 @@ body.axioo-mac .axioo-tab-strip {
   stroke-linecap: round;
 }
 
+.axioo-toolbar-right {
+  position: fixed;
+  top: 0;
+  right: var(--axioo-toolbar-right-pos, 138px);
+  height: 30px;
+  display: flex;
+  align-items: center;
+  z-index: 100001;
+  -webkit-app-region: no-drag;
+}
+
+body.axioo-mac .axioo-toolbar-right {
+  right: 8px;
+}
+
+.axioo-update-button {
+  position: relative;
+}
+
+.axioo-update-button:hover:not(:disabled) {
+  background: var(--titlebar-hover);
+}
+
+.axioo-update-button.is-checking svg {
+  animation: axioo-spin 1s linear infinite;
+}
+
+@keyframes axioo-spin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.axioo-update-badge {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background-color: #22c55e;
+  box-shadow: 0 0 0 1.5px var(--titlebar-background);
+  pointer-events: none;
+}
+
+.axioo-update-button.is-available .axioo-update-badge,
+.axioo-update-button.is-downloading .axioo-update-badge {
+  background-color: #3b82f6;
+}
+
+.axioo-update-button.is-ready .axioo-update-badge {
+  background-color: #22c55e;
+}
+

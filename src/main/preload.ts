@@ -22,6 +22,26 @@ type ChromeLayout = {
   rightInset: number;
 };
 
+type UpdateStatus = {
+  state:
+    | 'idle'
+    | 'checking'
+    | 'available'
+    | 'downloading'
+    | 'ready'
+    | 'up-to-date'
+    | 'error';
+  version?: string;
+  percent?: number;
+  message?: string;
+};
+
+type WindowControlsOverlay = {
+  visible: boolean;
+  getTitlebarAreaRect(): DOMRect;
+  addEventListener(type: string, listener: EventListener): void;
+};
+
 const TAB_COMMAND_CHANNEL = 'tabs:command';
 const TAB_STATE_CHANNEL = 'tabs:state';
 const LAYOUT_CHANNEL = 'layout:chrome';
@@ -44,6 +64,8 @@ const newTabIcon =
   '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>';
 const closeIcon =
   '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m7 7 10 10M17 7 7 17"/></svg>';
+const updateIcon =
+  '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M21 12a9 9 0 1 1-2.64-6.36L21 8M21 3v5h-5"/></svg>';
 const theme = window.matchMedia('(prefers-color-scheme: dark)');
 const titlebarBackground = () =>
   TitlebarColor.fromHex(theme.matches ? '#2c2c2c' : '#f6f8fb');
@@ -119,7 +141,7 @@ void createTitlebarOnDOMContentLoaded({
 
   const dropIndexAt = (clientX: number) => {
     let index = 0;
-    for (const element of list.children) {
+    for (const element of Array.from(list.children)) {
       if (element === draggedElement) continue;
       const bounds = element.getBoundingClientRect();
       if (clientX > bounds.left + bounds.width / 2) index += 1;
@@ -235,6 +257,136 @@ void createTitlebarOnDOMContentLoaded({
   addButton.addEventListener('click', () =>
     ipcRenderer.send(TAB_COMMAND_CHANNEL, 'new'),
   );
+
+  const right = document.createElement('div');
+  right.className = 'axioo-toolbar-right';
+  const updateButton = makeButton(
+    'Check for updates',
+    updateIcon,
+    'axioo-update-button',
+  );
+  const updateBadge = document.createElement('span');
+  updateBadge.className = 'axioo-update-badge';
+  updateBadge.hidden = true;
+  updateButton.append(updateBadge);
+  right.append(updateButton);
+  document.body.append(right);
+
+  const syncRightOffset = () => {
+    let rightPos = 138;
+    const wco = (
+      navigator as Navigator & {
+        windowControlsOverlay?: WindowControlsOverlay;
+      }
+    ).windowControlsOverlay;
+    if (process.platform === 'win32') {
+      if (wco?.visible) {
+        const rect = wco.getTitlebarAreaRect();
+        const width = Math.round(window.innerWidth - (rect.x + rect.width));
+        if (width > 0) rightPos = width;
+      }
+    } else if (process.platform === 'darwin') {
+      rightPos = 8;
+    }
+    document.documentElement.style.setProperty(
+      '--axioo-toolbar-right-pos',
+      `${rightPos}px`,
+    );
+  };
+  syncRightOffset();
+  window.addEventListener('resize', syncRightOffset);
+  const wco = (
+    navigator as Navigator & {
+      windowControlsOverlay?: WindowControlsOverlay;
+    }
+  ).windowControlsOverlay;
+  if (wco) {
+    wco.addEventListener('geometrychange', syncRightOffset);
+  }
+
+  let currentUpdateState: UpdateStatus = { state: 'idle' };
+  let resetLabelTimer: ReturnType<typeof setTimeout> | null = null;
+
+  updateButton.addEventListener('click', () => {
+    if (currentUpdateState.state === 'ready') {
+      ipcRenderer.send('updates:install');
+    } else if (
+      currentUpdateState.state === 'checking' ||
+      currentUpdateState.state === 'downloading'
+    ) {
+      // In progress
+    } else {
+      ipcRenderer.send('updates:check');
+    }
+  });
+
+  ipcRenderer.on('updates:status', (_event, status: UpdateStatus) => {
+    currentUpdateState = status;
+    if (resetLabelTimer) {
+      clearTimeout(resetLabelTimer);
+      resetLabelTimer = null;
+    }
+
+    updateButton.classList.toggle('is-checking', status.state === 'checking');
+    updateButton.classList.toggle(
+      'is-downloading',
+      status.state === 'downloading',
+    );
+    updateButton.classList.toggle('is-available', status.state === 'available');
+    updateButton.classList.toggle('is-ready', status.state === 'ready');
+
+    if (status.state === 'ready') {
+      updateBadge.hidden = false;
+      const label = status.version
+        ? `Update v${status.version} ready! Click to restart and install.`
+        : 'Update ready! Click to restart and install.';
+      updateButton.title = label;
+      updateButton.setAttribute('aria-label', label);
+    } else if (status.state === 'available') {
+      updateBadge.hidden = false;
+      const label = status.version
+        ? `Update v${status.version} available`
+        : 'Update available';
+      updateButton.title = label;
+      updateButton.setAttribute('aria-label', label);
+    } else if (status.state === 'downloading') {
+      updateBadge.hidden = false;
+      const pct =
+        typeof status.percent === 'number' ? ` (${status.percent}%)` : '';
+      const label = `Downloading update...${pct}`;
+      updateButton.title = label;
+      updateButton.setAttribute('aria-label', label);
+    } else if (status.state === 'checking') {
+      updateBadge.hidden = true;
+      const label = 'Checking for updates...';
+      updateButton.title = label;
+      updateButton.setAttribute('aria-label', label);
+    } else if (status.state === 'up-to-date') {
+      updateBadge.hidden = true;
+      const label = status.version
+        ? `Axioo Desktop is up to date (v${status.version})`
+        : 'Axioo Desktop is up to date';
+      updateButton.title = label;
+      updateButton.setAttribute('aria-label', label);
+      resetLabelTimer = setTimeout(() => {
+        updateButton.title = 'Check for updates';
+        updateButton.setAttribute('aria-label', 'Check for updates');
+      }, 5000);
+    } else if (status.state === 'error') {
+      updateBadge.hidden = true;
+      const label = status.message || 'Update check failed';
+      updateButton.title = label;
+      updateButton.setAttribute('aria-label', label);
+      resetLabelTimer = setTimeout(() => {
+        updateButton.title = 'Check for updates';
+        updateButton.setAttribute('aria-label', 'Check for updates');
+      }, 5000);
+    } else {
+      updateBadge.hidden = true;
+      updateButton.title = 'Check for updates';
+      updateButton.setAttribute('aria-label', 'Check for updates');
+    }
+  });
 
   ipcRenderer.on(TAB_STATE_CHANNEL, (_event, tabs: TabState[]) => {
     renderTabs(Array.isArray(tabs) ? tabs : []);

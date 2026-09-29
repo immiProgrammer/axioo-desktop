@@ -12,7 +12,7 @@ import MenuBuilder from './menu';
 import { getStoreUrl } from './navigation';
 import { getSettingsStore } from './settings';
 import { TabManager } from './tabs';
-import startAutoUpdates from './updates';
+import initAutoUpdates, { checkForUpdates } from './updates';
 
 const MIN_WINDOW_WIDTH = 640;
 const MIN_WINDOW_HEIGHT = 400;
@@ -125,6 +125,7 @@ const createWindow = async () => {
     window,
     () => tabs.activeSite,
     () => tabs.reloadAll(),
+    () => void checkForUpdates(window, true),
   );
   menuBuilder.buildMenu();
   window.setMenuBarVisibility(false);
@@ -164,7 +165,9 @@ app
   .then(async () => {
     getSettingsStore();
     await createWindow();
-    startAutoUpdates();
+    if (mainWindow) {
+      initAutoUpdates(mainWindow);
+    }
     app.on('activate', onActivate);
   })
   .catch((error: unknown) => {
