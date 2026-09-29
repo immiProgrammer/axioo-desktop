@@ -36,8 +36,6 @@ const makeButton = (label: string, icon: string, className: string) => {
   return button;
 };
 
-const menuIcon =
-  '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h16"/></svg>';
 const backIcon =
   '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m14 5-7 7 7 7M7 12h13"/></svg>';
 const forwardIcon =
@@ -64,9 +62,23 @@ void createTitlebarOnDOMContentLoaded({
   const forward = makeButton('Forward', forwardIcon, 'axioo-forward-button');
   back.disabled = true;
   forward.disabled = true;
-  const menu = makeButton('Open menu', menuIcon, 'axioo-menu-button');
-  left.append(back, forward, menu);
+  // The app icon doubles as the menu affordance, so no hamburger glyph.
+  const menu = makeButton('Open menu', '', 'axioo-menu-button');
+  const menuIcon = document.createElement('img');
+  menuIcon.className = 'axioo-menu-icon';
+  menuIcon.alt = '';
+  menuIcon.src = new URL('./axioo-icon.png', window.location.href).href;
+  menu.append(menuIcon);
+  left.append(menu, back, forward);
   titlebar.titlebarElement.append(left);
+  const syncStripOffset = () => {
+    document.documentElement.style.setProperty(
+      '--axioo-toolbar-width',
+      `${Math.round(left.getBoundingClientRect().width)}px`,
+    );
+  };
+  syncStripOffset();
+  window.addEventListener('resize', syncStripOffset);
   theme.addEventListener('change', () => {
     titlebar.updateBackground(titlebarBackground());
   });
@@ -88,10 +100,6 @@ void createTitlebarOnDOMContentLoaded({
   strip.className = 'axioo-tab-strip';
   strip.setAttribute('role', 'tablist');
   strip.setAttribute('aria-label', 'Open tabs');
-  const logo = document.createElement('img');
-  logo.className = 'axioo-toolbar-logo';
-  logo.alt = '';
-  logo.src = new URL('./axioo-icon.png', window.location.href).href;
   const list = document.createElement('div');
   list.className = 'axioo-tab-list';
   const addButton = document.createElement('button');
@@ -100,7 +108,7 @@ void createTitlebarOnDOMContentLoaded({
   addButton.title = 'New tab';
   addButton.setAttribute('aria-label', 'New tab');
   addButton.innerHTML = newTabIcon;
-  strip.append(logo, list, addButton);
+  strip.append(list, addButton);
   document.body.append(strip);
   if (process.platform === 'darwin') {
     document.body.classList.add('axioo-mac');

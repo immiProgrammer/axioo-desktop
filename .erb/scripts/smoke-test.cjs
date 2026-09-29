@@ -191,7 +191,7 @@ async function main() {
   const titlebarReady = await waitFor(
     () =>
       evaluateToolbar(
-        "Boolean(document.querySelector('.axioo-menu-button') && document.querySelector('.axioo-toolbar-logo') && document.querySelector('.axioo-back-button') && document.querySelector('.axioo-forward-button'))",
+        "Boolean(document.querySelector('.axioo-menu-button') && document.querySelector('.axioo-menu-button .axioo-menu-icon') && document.querySelector('.axioo-back-button') && document.querySelector('.axioo-forward-button'))",
       ),
     'custom title bar controls',
   );
@@ -206,24 +206,24 @@ async function main() {
       "[...document.querySelector('.axioo-toolbar-left').children].map((element) => element.className)",
     ),
     [
+      'axioo-toolbar-button axioo-menu-button',
       'axioo-toolbar-button axioo-back-button',
       'axioo-toolbar-button axioo-forward-button',
-      'axioo-toolbar-button axioo-menu-button',
     ],
   );
   assert.equal(
     await evaluateToolbar(
-      "Math.round(document.querySelector('.axioo-back-button').getBoundingClientRect().left)",
+      "(() => { const buttons = [...document.querySelector('.axioo-toolbar-left').children].map((button) => button.getBoundingClientRect()); return Math.round(buttons[0].left) === 0 && buttons.every((bounds, index) => index === 0 || Math.round(bounds.left - buttons[index - 1].right) <= 2); })()",
     ),
-    0,
-    'the toolbar buttons should start flush at the window edge',
+    true,
+    'the menu button should start flush at the window edge with no gaps',
   );
   await waitFor(
     () =>
       evaluateToolbar(
-        "document.querySelector('.axioo-tab-strip .axioo-toolbar-logo').naturalWidth > 0",
+        "(() => { const icon = document.querySelector('.axioo-menu-button .axioo-menu-icon'); return icon && icon.naturalWidth > 0 && icon.getBoundingClientRect().width === 16; })()",
       ),
-    'Axioo logo',
+    'menu button icon',
   );
   assert.equal(
     await evaluateToolbar(
@@ -390,6 +390,27 @@ async function main() {
       ...params,
     });
   };
+  const pressKey = async (key, targetSocket = socket, modifiers = 0) => {
+    const virtualKeyCodes = { F5: 116 };
+    const name = key.toUpperCase();
+    const virtualKeyCode = virtualKeyCodes[name] ?? name.charCodeAt(0);
+    const params = {
+      key,
+      code: key.length === 1 ? `Key${name}` : name,
+      windowsVirtualKeyCode: virtualKeyCode,
+      nativeVirtualKeyCode: virtualKeyCode,
+      modifiers,
+    };
+    // rawKeyDown is the only CDP key type that reaches before-input-event.
+    await command(targetSocket, 'Input.dispatchKeyEvent', {
+      type: 'rawKeyDown',
+      ...params,
+    });
+    await command(targetSocket, 'Input.dispatchKeyEvent', {
+      type: 'keyUp',
+      ...params,
+    });
+  };
   const tabCount = () =>
     evaluateToolbar("document.querySelectorAll('.axioo-tab').length");
   const activeTabIndex = () =>
@@ -419,6 +440,13 @@ async function main() {
   );
   assert.equal(
     await evaluateToolbar(
+      "(() => { const tabs = [...document.querySelectorAll('.axioo-tab')]; const last = tabs[tabs.length - 1].getBoundingClientRect(); const add = document.querySelector('.axioo-tab-new').getBoundingClientRect(); const gap = add.left - last.right; return gap > 0 && gap <= 12; })()",
+    ),
+    true,
+    'the new-tab button should sit right after the last tab',
+  );
+  assert.equal(
+    await evaluateToolbar(
       "(() => { const tab = document.querySelector('.axioo-tab'); const bounds = tab.getBoundingClientRect(); const close = tab.querySelector('.axioo-tab-close').getBoundingClientRect(); return Math.abs((close.top + close.height / 2) - (bounds.top + bounds.height / 2)) < 1; })()",
     ),
     true,
@@ -431,16 +459,32 @@ async function main() {
     'none',
     'the close button itself should have no gradient',
   );
-  assert.equal(
-    await evaluateToolbar(
-      "(() => { const active = document.querySelector('.axioo-tab-active'); const idle = [...document.querySelectorAll('.axioo-tab')].find((tab) => !tab.classList.contains('axioo-tab-active')); const fade = getComputedStyle(active, '::after'); return fade.content !== 'none' && fade.backgroundImage.includes('gradient') && parseFloat(fade.width) > 0 && getComputedStyle(active.querySelector('.axioo-tab-close')).zIndex === '1' && Number(fade.opacity) === 1 && Number(getComputedStyle(active.querySelector('.axioo-tab-title')).opacity) < 1 && Number(getComputedStyle(idle, '::after').opacity) === 0 && Number(getComputedStyle(idle.querySelector('.axioo-tab-title')).opacity) === 1; })()",
-    ),
-    true,
-    'the active tab should paint a gradient fade behind the close button',
+  const fade = await evaluateToolbar(
+    "(() => { const active = document.querySelector('.axioo-tab-active'); const idle = document.querySelector('.axioo-tab:not(.axioo-tab-active)'); const style = getComputedStyle(active, '::after'); return { background: style.backgroundImage, width: style.width, opacity: style.opacity, closeZIndex: getComputedStyle(active.querySelector('.axioo-tab-close')).zIndex, activeTitle: getComputedStyle(active.querySelector('.axioo-tab-title')).opacity, idleOpacity: getComputedStyle(idle, '::after').opacity, idleTitle: getComputedStyle(idle.querySelector('.axioo-tab-title')).opacity }; })()",
   );
+  assert.match(
+    fade.background,
+    /gradient/,
+    'the fade behind the close button should be a gradient',
+  );
+  assert.ok(parseFloat(fade.width) > 0, 'the fade should have width');
+  assert.equal(fade.opacity, '1', 'the active tab should show the fade');
+  assert.equal(
+    fade.closeZIndex,
+    '1',
+    'the close button should paint above the fade',
+  );
+  assert.ok(
+    Number(fade.activeTitle) < 1,
+    'the active tab title should be softened',
+  );
+  assert.equal(fade.idleOpacity, '0', 'an idle tab should hide the fade');
+  assert.equal(fade.idleTitle, '1', 'an idle tab title should be fully opaque');
   await command(toolbarSocket, 'DOM.enable');
   await command(toolbarSocket, 'CSS.enable');
-  const chromeRoot = await command(toolbarSocket, 'DOM.getDocument', { depth: -1 });
+  const chromeRoot = await command(toolbarSocket, 'DOM.getDocument', {
+    depth: -1,
+  });
   const idleTabNode = await command(toolbarSocket, 'DOM.querySelector', {
     nodeId: chromeRoot.root.nodeId,
     selector: '.axioo-tab:not(.axioo-tab-active)',
@@ -458,6 +502,25 @@ async function main() {
   );
   await command(toolbarSocket, 'CSS.forcePseudoState', {
     nodeId: idleTabNode.nodeId,
+    forcedPseudoClasses: [],
+  });
+  const menuNode = await command(toolbarSocket, 'DOM.querySelector', {
+    nodeId: chromeRoot.root.nodeId,
+    selector: '.axioo-menu-button',
+  });
+  await command(toolbarSocket, 'CSS.forcePseudoState', {
+    nodeId: menuNode.nodeId,
+    forcedPseudoClasses: ['hover'],
+  });
+  assert.equal(
+    await evaluateToolbar(
+      "getComputedStyle(document.querySelector('.axioo-menu-button')).backgroundColor === 'rgba(0, 0, 0, 0)' && getComputedStyle(document.querySelector('.axioo-back-button')).backgroundColor === 'rgba(0, 0, 0, 0)'",
+    ),
+    true,
+    'the menu button should keep a transparent hover background',
+  );
+  await command(toolbarSocket, 'CSS.forcePseudoState', {
+    nodeId: menuNode.nodeId,
     forcedPseudoClasses: [],
   });
   const freshId = (await tabIds())[1];
@@ -532,6 +595,26 @@ async function main() {
   await waitFor(async () => (await tabCount()) === 2, 'closed tab', 15_000);
   assert.equal(await activeTabIndex(), 1);
   assert.equal((await tabIds())[1], originalId);
+
+  // F5 and Ctrl+R both refresh the active tab; a marker set on the live
+  // document disappears only if the page really reloaded.
+  for (const [label, press] of [
+    ['F5', async () => pressKey('F5', socket)],
+    ['Ctrl+R', async () => pressKey('R', socket, 2)],
+  ]) {
+    await evaluate('window.__axiooReloadProbe = 1; true');
+    await press();
+    await waitFor(
+      async () => (await evaluate('window.__axiooReloadProbe')) !== 1,
+      `${label} reloads the active tab`,
+      25_000,
+    );
+  }
+  await waitFor(
+    () => evaluate('document.readyState === "complete"'),
+    'page ready after reload',
+    25_000,
+  );
 
   await evaluateToolbar(
     `[...document.querySelectorAll('.axioo-tab')].find((tab) => tab.dataset.tabId === ${JSON.stringify(freshId)}).querySelector('.axioo-tab-close').click()`,

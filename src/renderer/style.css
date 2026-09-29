@@ -87,6 +87,12 @@ body {
   background: var(--titlebar-hover);
 }
 
+/* The app icon pops a native menu, which keeps the pointer "over" the button
+   while it is open, so it must not paint a hover chip behind the menu. */
+.axioo-menu-button:hover:not(:disabled) {
+  background: transparent;
+}
+
 .axioo-toolbar-button:focus-visible {
   outline: 2px solid #4d8ae8;
   outline-offset: 1px;
@@ -107,24 +113,26 @@ body {
   stroke-linejoin: round;
 }
 
-.axioo-toolbar-logo {
-  width: 18px;
-  height: 18px;
+.axioo-menu-icon {
+  width: 16px;
+  height: 16px;
   object-fit: contain;
-  flex: none;
+  display: block;
+  pointer-events: none;
 }
 
 .cet-titlebar.cet-mac .axioo-toolbar-left {
   left: 82px;
 }
 
-/* The tab strip lives on the caption row: after the back/forward/menu buttons
+/* The tab strip lives on the caption row: after the menu/back/forward buttons
    on the left and before the native window controls on the right. Empty space
    in the strip is still a drag region so the window can be moved. */
 .axioo-tab-strip {
   position: fixed;
   top: 0;
-  left: 96px;
+  left: var(--axioo-toolbar-width, 96px);
+  right: 0;
   height: 30px;
   display: flex;
   align-items: center;
@@ -139,15 +147,17 @@ body {
 }
 
 body.axioo-mac .axioo-tab-strip {
-  left: 178px;
+  left: calc(var(--axioo-toolbar-width, 96px) + 82px);
 }
 
 .axioo-tab-strip[hidden] {
   display: none;
 }
 
+/* Shrink-wraps the tabs so the new-tab button always sits right after the
+   last one; the leftover strip space stays a drag region. */
 .axioo-tab-list {
-  flex: 1;
+  flex: 0 1 auto;
   min-width: 0;
   display: flex;
   align-items: center;

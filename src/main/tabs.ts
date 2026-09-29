@@ -381,8 +381,15 @@ export class TabManager {
 
   private handleShortcut(input: Electron.Input, site: WebContents) {
     const command = process.platform === 'darwin' ? input.meta : input.control;
-    if (!command) return false;
     const key = input.key.toLowerCase();
+
+    // F5 refreshes without a modifier, so it has to be read before the
+    // command-key gate below.
+    if (key === 'f5') {
+      this.reloadSite(site, input.shift);
+      return true;
+    }
+    if (!command) return false;
 
     if (key === 't') {
       if (input.shift) this.reopenClosedTab();
@@ -393,8 +400,8 @@ export class TabManager {
       this.closeTab(this.activeId ?? '');
       return true;
     }
-    if (key === 'r' && input.shift) {
-      if (!site.isDestroyed()) site.reload();
+    if (key === 'r') {
+      this.reloadSite(site, input.shift);
       return true;
     }
     if (key === 'tab') {
@@ -406,6 +413,12 @@ export class TabManager {
       return true;
     }
     return false;
+  }
+
+  private reloadSite(site: WebContents, hard: boolean) {
+    if (site.isDestroyed()) return;
+    if (hard) site.reloadIgnoringCache();
+    else site.reload();
   }
 
   newTab(url: string = HOME_URL) {
