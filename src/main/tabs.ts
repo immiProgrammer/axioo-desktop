@@ -22,6 +22,7 @@ import {
   getSessionTabs,
 } from './navigation';
 import { getConfiguredBaseUrl, getSettingsStore } from './settings';
+import { getStaticCacheManager, isAxiooHost } from './static-cache';
 
 export const TAB_STATE_CHANNEL = 'tabs:state';
 export const TAB_COMMAND_CHANNEL = 'tabs:command';
@@ -355,6 +356,11 @@ export class TabManager {
       if (this.activeId === tab.id) this.sendTitle(pageTitle);
       this.sendState();
     });
+    site.on('did-start-navigation', (_event, url, isInPlace, isMainFrame) => {
+      if (isMainFrame && !isInPlace && isAxiooHost(url)) {
+        void getStaticCacheManager().verifyBuildVersion();
+      }
+    });
     site.on('did-navigate', (_event, url) => {
       recordHistory(url, false);
       this.trackUrl(tab, url);
@@ -485,8 +491,12 @@ export class TabManager {
 
   private reloadSite(site: WebContents, hard: boolean) {
     if (site.isDestroyed()) return;
-    if (hard) site.reloadIgnoringCache();
-    else site.reload();
+    if (hard) {
+      void getStaticCacheManager().purgeCache();
+      site.reloadIgnoringCache();
+    } else {
+      site.reload();
+    }
   }
 
   getNewTabUrl(): string {

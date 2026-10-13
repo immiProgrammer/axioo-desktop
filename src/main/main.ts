@@ -11,6 +11,7 @@ import {
   ipcMain,
   Menu,
   nativeTheme,
+  session,
   shell,
 } from 'electron';
 import { setupTitlebarAndAttachToWindow } from 'custom-electron-titlebar/main';
@@ -22,6 +23,7 @@ import { CAPTION_HEIGHT } from './layout';
 import MenuBuilder from './menu';
 import { getStoreUrl, HOME_URL } from './navigation';
 import { getSettingsStore } from './settings';
+import { getStaticCacheManager } from './static-cache';
 import { TabManager } from './tabs';
 import initAutoUpdates, { checkForUpdates } from './updates';
 
@@ -337,6 +339,8 @@ if (!hasSingleInstanceLock) {
     .whenReady()
     .then(async () => {
       getSettingsStore();
+      getStaticCacheManager().register(session.defaultSession);
+      void getStaticCacheManager().verifyBuildVersion();
       registerDesktopBridgeHandlers();
       await createWindow();
       if (mainWindow) {

@@ -1,9 +1,9 @@
 export const PRODUCTION_HOME_URL = 'https://axioo.store/';
 
-const PRODUCTION_HOST = new URL(PRODUCTION_HOME_URL).hostname;
+export const PRODUCTION_HOST = new URL(PRODUCTION_HOME_URL).hostname;
 const LOOPBACK_HOSTS = new Set(['localhost', '127.0.0.1', '::1']);
 
-const isProductionHost = (host: string) =>
+export const isProductionHost = (host: string) =>
   host === PRODUCTION_HOST || host.endsWith(`.${PRODUCTION_HOST}`);
 
 const isSameStoreHost = (host: string, baseHost: string) => {
