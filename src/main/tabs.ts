@@ -2,6 +2,7 @@ import path from 'node:path';
 import {
   app,
   clipboard,
+  dialog,
   ipcMain,
   Menu,
   shell,
@@ -12,6 +13,7 @@ import log from 'electron-log';
 import type { FetchBridge } from './fetch-bridge';
 import { SiteHistory } from './history';
 import { buildLinkMenuTemplate } from './link-menu';
+import { buildTabContextMenuTemplate } from './tab-menu';
 import { CONTENT_TOP } from './layout';
 import {
   HOME_URL,
@@ -20,8 +22,13 @@ import {
   getInternalUrl,
   getRestorableStoreUrl,
   getSessionTabs,
+  parseBaseUrl,
 } from './navigation';
-import { getConfiguredBaseUrl, getSettingsStore } from './settings';
+import {
+  getConfiguredBaseUrl,
+  getSettingsStore,
+  setConfiguredBaseUrl,
+} from './settings';
 import { getStaticCacheManager, isAxiooHost } from './static-cache';
 
 export const TAB_STATE_CHANNEL = 'tabs:state';
@@ -210,6 +217,15 @@ export class TabManager {
       case 'move': {
         const to = Number(args[1]);
         if (args[0] && Number.isInteger(to)) this.moveTab(args[0], to);
+        break;
+      }
+      case 'edit-url': {
+        const targetId = args[0] || this.activeId;
+        if (targetId) this.editTab(targetId);
+        break;
+      }
+      case 'context-menu': {
+        if (args[0]) this.showTabContextMenu(args[0]);
         break;
       }
       default:
@@ -487,6 +503,70 @@ export class TabManager {
     });
     if (!template.length) return;
     Menu.buildFromTemplate(template).popup({ window: this.window });
+  }
+
+  editTab(id: string) {
+    this.activate(id);
+    if (this.onEditUrl) {
+      this.onEditUrl();
+    }
+  }
+
+  private showTabContextMenu(id: string) {
+    const tab = this.tabs.get(id);
+    if (!tab) return;
+
+    const template = buildTabContextMenuTemplate({
+      editUrl: () => {
+        this.editTab(id);
+      },
+      setAsBaseUrl: () => {
+        void this.setTabAsBaseUrl(id);
+      },
+      closeTab: () => {
+        this.closeTab(id);
+      },
+    });
+
+    Menu.buildFromTemplate(template).popup({ window: this.window });
+  }
+
+  private async setTabAsBaseUrl(id: string) {
+    if (this.window.isDestroyed()) return;
+    const tab = this.tabs.get(id);
+    if (!tab) return;
+
+    const rawUrl =
+      (!tab.site.isDestroyed() && tab.site.getURL()) || tab.url || '';
+    if (!rawUrl) {
+      await dialog.showMessageBox(this.window, {
+        type: 'warning',
+        title: 'Set Base URL',
+        message: 'No tab URL is available to set as Base URL.',
+      });
+      return;
+    }
+
+    const verified = parseBaseUrl(rawUrl);
+    if (!verified) {
+      await dialog.showMessageBox(this.window, {
+        type: 'warning',
+        title: 'Set Base URL',
+        message: 'The tab URL is not a valid Axioo store URL.',
+        detail: `URL: ${rawUrl}\n\nBase URL must be an HTTPS URL on axioo.store or *.axioo.store.`,
+      });
+      return;
+    }
+
+    const success = setConfiguredBaseUrl(verified);
+    if (success) {
+      await dialog.showMessageBox(this.window, {
+        type: 'info',
+        title: 'Base URL Updated',
+        message: 'Base URL has been updated successfully.',
+        detail: `New Base URL: ${verified}`,
+      });
+    }
   }
 
   private reloadSite(site: WebContents, hard: boolean) {
