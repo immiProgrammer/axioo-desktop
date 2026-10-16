@@ -93,13 +93,20 @@ void createTitlebarOnDOMContentLoaded({
   left.append(menu, back, forward);
   titlebar.titlebarElement.append(left);
   const syncStripOffset = () => {
-    document.documentElement.style.setProperty(
-      '--axioo-toolbar-width',
-      `${Math.round(left.getBoundingClientRect().width)}px`,
-    );
+    const width = Math.ceil(left.getBoundingClientRect().width);
+    if (width >= 80) {
+      document.documentElement.style.setProperty(
+        '--axioo-toolbar-width',
+        `${width}px`,
+      );
+    }
   };
   syncStripOffset();
+  window.addEventListener('load', syncStripOffset);
   window.addEventListener('resize', syncStripOffset);
+  if (typeof ResizeObserver === 'function') {
+    new ResizeObserver(syncStripOffset).observe(left);
+  }
   theme.addEventListener('change', () => {
     titlebar.updateBackground(titlebarBackground());
   });
