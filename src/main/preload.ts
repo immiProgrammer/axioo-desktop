@@ -326,11 +326,8 @@ void createTitlebarOnDOMContentLoaded({
   updateButton.addEventListener('click', () => {
     if (currentUpdateState.state === 'ready') {
       ipcRenderer.send('updates:install');
-    } else if (
-      currentUpdateState.state === 'checking' ||
-      currentUpdateState.state === 'downloading'
-    ) {
-      // In progress
+    } else if (currentUpdateState.state === 'checking') {
+      // Already checking
     } else {
       ipcRenderer.send('updates:check');
     }
@@ -361,8 +358,8 @@ void createTitlebarOnDOMContentLoaded({
     } else if (status.state === 'available') {
       updateBadge.hidden = false;
       const label = status.version
-        ? `Update v${status.version} available`
-        : 'Update available';
+        ? `Update v${status.version} available. Downloading...`
+        : 'Update available. Downloading...';
       updateButton.title = label;
       updateButton.setAttribute('aria-label', label);
     } else if (status.state === 'downloading') {

@@ -22,11 +22,21 @@ export type UpdateStatus = {
 
 const GITHUB_REPO = 'immiProgrammer/axioo-desktop';
 let updateDownloaded = false;
+let isDownloading = false;
+let manualCheckPending = false;
 let initialized = false;
+let promptOpen = false;
 
 function broadcastStatus(window: BrowserWindow, status: UpdateStatus) {
   if (window.isDestroyed() || window.webContents.isDestroyed()) return;
   window.webContents.send('updates:status', status);
+}
+
+function quitAndInstallSilently() {
+  setImmediate(() => {
+    app.removeAllListeners('window-all-closed');
+    autoUpdater.quitAndInstall(true, true);
+  });
 }
 
 function isNewerVersion(remoteTag: string, currentVersion: string): boolean {
@@ -50,7 +60,24 @@ export async function checkForUpdates(
   window: BrowserWindow,
   manual = false,
 ): Promise<void> {
+  if (updateDownloaded) {
+    if (manual) {
+      await installUpdate(window);
+    }
+    return;
+  }
+
+  if (isDownloading) {
+    if (manual) {
+      manualCheckPending = true;
+    }
+    return;
+  }
+
   log.info(`Checking for updates (manual: ${manual})...`);
+  if (manual) {
+    manualCheckPending = true;
+  }
   broadcastStatus(window, {
     state: 'checking',
     message: 'Checking for updates...',
@@ -63,6 +90,7 @@ export async function checkForUpdates(
     try {
       await autoUpdater.checkForUpdates();
     } catch (error) {
+      manualCheckPending = false;
       log.error('AutoUpdater check error:', error);
       broadcastStatus(window, {
         state: 'error',
@@ -91,6 +119,7 @@ export async function checkForUpdates(
     );
 
     if (response.status === 404) {
+      manualCheckPending = false;
       const current = app.getVersion();
       broadcastStatus(window, {
         state: 'up-to-date',
@@ -116,6 +145,7 @@ export async function checkForUpdates(
     const data = (await response.json()) as { tag_name?: string };
     const latestTag = data.tag_name ?? '';
     const current = app.getVersion();
+    manualCheckPending = false;
 
     if (latestTag && isNewerVersion(latestTag, current)) {
       broadcastStatus(window, {
@@ -156,6 +186,7 @@ export async function checkForUpdates(
       }
     }
   } catch (err) {
+    manualCheckPending = false;
     log.error('GitHub release check error:', err);
     broadcastStatus(window, {
       state: 'error',
@@ -173,19 +204,30 @@ export async function checkForUpdates(
   }
 }
 
-export async function installUpdate(window: BrowserWindow): Promise<void> {
+export async function installUpdate(
+  window: BrowserWindow,
+  version?: string,
+): Promise<void> {
   if (updateDownloaded) {
-    const { response } = await dialog.showMessageBox(window, {
-      type: 'question',
-      buttons: ['Restart & Install', 'Later'],
-      defaultId: 0,
-      cancelId: 1,
-      title: 'Update Ready',
-      message: 'A new version of Axioo Desktop is ready to install.',
-      detail: 'The application will restart to complete the update.',
-    });
-    if (response === 0) {
-      autoUpdater.quitAndInstall();
+    if (promptOpen || window.isDestroyed()) return;
+    promptOpen = true;
+    try {
+      const versionLabel = version ? ` (v${version})` : '';
+      const { response } = await dialog.showMessageBox(window, {
+        type: 'question',
+        buttons: ['Restart & Install', 'Later'],
+        defaultId: 0,
+        cancelId: 1,
+        title: 'Update Ready',
+        message: `A new version of Axioo Desktop${versionLabel} is ready to install.`,
+        detail:
+          'Axioo Desktop will automatically update and reopen right away.',
+      });
+      if (response === 0) {
+        quitAndInstallSilently();
+      }
+    } finally {
+      promptOpen = false;
     }
   } else {
     void shell.openExternal(
@@ -211,6 +253,7 @@ export default function initAutoUpdates(mainWindow: BrowserWindow): void {
   });
 
   autoUpdater.on('update-available', (info) => {
+    isDownloading = true;
     broadcastStatus(mainWindow, {
       state: 'available',
       version: info.version,
@@ -219,14 +262,28 @@ export default function initAutoUpdates(mainWindow: BrowserWindow): void {
   });
 
   autoUpdater.on('update-not-available', (info) => {
+    isDownloading = false;
+    const wasManual = manualCheckPending;
+    manualCheckPending = false;
+    const current = info.version || app.getVersion();
     broadcastStatus(mainWindow, {
       state: 'up-to-date',
-      version: info.version || app.getVersion(),
-      message: `Axioo Desktop is up to date (v${info.version || app.getVersion()})`,
+      version: current,
+      message: `Axioo Desktop is up to date (v${current})`,
     });
+    if (wasManual && !mainWindow.isDestroyed()) {
+      void dialog.showMessageBox(mainWindow, {
+        type: 'info',
+        buttons: ['OK'],
+        title: 'Up to Date',
+        message: 'Axioo Desktop is up to date.',
+        detail: `Version v${current} is the latest available.`,
+      });
+    }
   });
 
   autoUpdater.on('download-progress', (progress) => {
+    isDownloading = true;
     broadcastStatus(mainWindow, {
       state: 'downloading',
       percent: Math.round(progress.percent),
@@ -235,15 +292,23 @@ export default function initAutoUpdates(mainWindow: BrowserWindow): void {
   });
 
   autoUpdater.on('update-downloaded', (info) => {
+    isDownloading = false;
     updateDownloaded = true;
+    const wasManual = manualCheckPending;
+    manualCheckPending = false;
     broadcastStatus(mainWindow, {
       state: 'ready',
       version: info.version,
       message: `Update v${info.version} downloaded. Click to install.`,
     });
+    if (wasManual && !mainWindow.isDestroyed()) {
+      void installUpdate(mainWindow, info.version);
+    }
   });
 
   autoUpdater.on('error', (error: Error) => {
+    isDownloading = false;
+    manualCheckPending = false;
     log.error('Auto-update error:', error);
     broadcastStatus(mainWindow, {
       state: 'error',
