@@ -181,11 +181,27 @@ void createTitlebarOnDOMContentLoaded({
         event.stopPropagation();
         ipcRenderer.send(TAB_COMMAND_CHANNEL, `close:${tab.id}`);
       });
+      close.addEventListener('dblclick', (event) => {
+        event.stopPropagation();
+      });
+      close.addEventListener('contextmenu', (event) => {
+        event.stopPropagation();
+      });
       element.append(close);
 
       element.addEventListener('click', () =>
         ipcRenderer.send(TAB_COMMAND_CHANNEL, `select:${tab.id}`),
       );
+      element.addEventListener('dblclick', (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        ipcRenderer.send(TAB_COMMAND_CHANNEL, `edit-url:${tab.id}`);
+      });
+      element.addEventListener('contextmenu', (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        ipcRenderer.send(TAB_COMMAND_CHANNEL, `context-menu:${tab.id}`);
+      });
       element.addEventListener('mousedown', (event) => {
         // A middle press on the overflow container would otherwise start a
         // horizontal auto-scroll; the press is reserved for closing the tab.

@@ -298,3 +298,37 @@ test('settings baseUrl can be configured, retrieved, and cleared', () => {
   clearConfiguredBaseUrl(memoryStore);
   assert.equal(getConfiguredBaseUrl(memoryStore), null);
 });
+
+test('saved production baseUrl in settings does not override a dev APP_URL / baseUrl', () => {
+  const memoryStore = {
+    data: { baseUrl: 'https://axioo.store/' },
+    get(key) {
+      return this.data[key];
+    },
+    set(key, val) {
+      this.data[key] = val;
+    },
+    delete(key) {
+      delete this.data[key];
+    },
+  };
+
+  const devBase = 'http://dev.axioo.store:3000/';
+  assert.equal(getConfiguredBaseUrl(memoryStore, devBase), null);
+  assert.equal(
+    parseBaseUrl('http://shop.dev.axioo.store:3000/dashboard', devBase),
+    'http://shop.dev.axioo.store:3000/dashboard',
+  );
+  assert.equal(
+    setConfiguredBaseUrl(
+      'http://shop.dev.axioo.store:3000/dashboard',
+      memoryStore,
+      devBase,
+    ),
+    true,
+  );
+  assert.equal(
+    getConfiguredBaseUrl(memoryStore, devBase),
+    'http://shop.dev.axioo.store:3000/dashboard',
+  );
+});

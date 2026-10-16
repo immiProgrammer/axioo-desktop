@@ -14,6 +14,7 @@ import {
   getConfiguredBaseUrl,
   setConfiguredBaseUrl,
 } from './settings';
+import { getStaticCacheManager } from './static-cache';
 import { promptEditTabUrl } from './url-prompt';
 
 export default class MenuBuilder {
@@ -216,6 +217,7 @@ export default class MenuBuilder {
       await session.defaultSession.clearCache();
       await session.defaultSession.clearAuthCache();
       await session.defaultSession.clearHostResolverCache();
+      await getStaticCacheManager().purgeCache();
 
       if (this.onDataCleared) {
         this.onDataCleared();
