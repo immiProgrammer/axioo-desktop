@@ -4,6 +4,7 @@ import { app, net, session } from 'electron';
 import type { Session } from 'electron';
 import log from 'electron-log';
 import { HOME_URL, isProductionHost } from './navigation';
+import { getProtocolForwardHeaders } from './protocol-forwarding';
 import {
   getCachedBuildId,
   getConfiguredBaseUrl,
@@ -203,6 +204,7 @@ export class StaticCacheManager {
       return fetchFn(
         request as Request,
         {
+          headers: getProtocolForwardHeaders(request as Request),
           bypassCustomProtocolHandlers: true,
         } as RequestInit,
       );

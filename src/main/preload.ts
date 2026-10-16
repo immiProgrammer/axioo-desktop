@@ -93,13 +93,20 @@ void createTitlebarOnDOMContentLoaded({
   left.append(menu, back, forward);
   titlebar.titlebarElement.append(left);
   const syncStripOffset = () => {
-    document.documentElement.style.setProperty(
-      '--axioo-toolbar-width',
-      `${Math.round(left.getBoundingClientRect().width)}px`,
-    );
+    const width = Math.ceil(left.getBoundingClientRect().width);
+    if (width >= 80) {
+      document.documentElement.style.setProperty(
+        '--axioo-toolbar-width',
+        `${width}px`,
+      );
+    }
   };
   syncStripOffset();
+  window.addEventListener('load', syncStripOffset);
   window.addEventListener('resize', syncStripOffset);
+  if (typeof ResizeObserver === 'function') {
+    new ResizeObserver(syncStripOffset).observe(left);
+  }
   theme.addEventListener('change', () => {
     titlebar.updateBackground(titlebarBackground());
   });
@@ -326,11 +333,8 @@ void createTitlebarOnDOMContentLoaded({
   updateButton.addEventListener('click', () => {
     if (currentUpdateState.state === 'ready') {
       ipcRenderer.send('updates:install');
-    } else if (
-      currentUpdateState.state === 'checking' ||
-      currentUpdateState.state === 'downloading'
-    ) {
-      // In progress
+    } else if (currentUpdateState.state === 'checking') {
+      // Already checking
     } else {
       ipcRenderer.send('updates:check');
     }
@@ -361,8 +365,8 @@ void createTitlebarOnDOMContentLoaded({
     } else if (status.state === 'available') {
       updateBadge.hidden = false;
       const label = status.version
-        ? `Update v${status.version} available`
-        : 'Update available';
+        ? `Update v${status.version} available. Downloading...`
+        : 'Update available. Downloading...';
       updateButton.title = label;
       updateButton.setAttribute('aria-label', label);
     } else if (status.state === 'downloading') {

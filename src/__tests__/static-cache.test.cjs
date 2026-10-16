@@ -163,6 +163,38 @@ test('StaticCacheManager background writes on CACHE MISS without blocking respon
   }
 });
 
+test('StaticCacheManager forwards sign-in POST body with the renderer origin', async () => {
+  const manager = new StaticCacheManager({ cacheDir: tempDir });
+  const originalFetch = global.fetch;
+  const body = JSON.stringify({ token: 'test-token' });
+  global.fetch = async (input, options) => {
+    assert.equal(input.url, 'https://axioo.store/api/auth/desktop-redeem');
+    assert.equal(input.method, 'POST');
+    assert.equal(await input.text(), body);
+    assert.equal(options.headers.get('origin'), 'https://axioo.store');
+    assert.equal(options.headers.get('content-type'), 'application/json');
+    assert.equal(options.bypassCustomProtocolHandlers, true);
+    return new Response(null, { status: 401 });
+  };
+  try {
+    const response = await manager.handleRequest(
+      Object.assign(
+        new Request('https://axioo.store/api/auth/desktop-redeem', {
+          method: 'POST',
+          referrer: 'https://axioo.store/desktop-login',
+          headers: { 'Content-Type': 'application/json' },
+          body,
+        }),
+        { initiatorOrigin: 'https://axioo.store' },
+      ),
+    );
+    assert.equal(response.status, 401);
+    assert.equal(fs.readdirSync(tempDir).length, 0);
+  } finally {
+    global.fetch = originalFetch;
+  }
+});
+
 test('StaticCacheManager purges cache when buildId changes', async () => {
   // Populate cache with dummy asset
   const dummyFile = path.join(tempDir, 'chunks', 'old-chunk.js');

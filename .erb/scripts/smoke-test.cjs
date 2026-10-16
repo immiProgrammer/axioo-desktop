@@ -126,14 +126,14 @@ async function main() {
       requests.delete(message.id);
     }
   });
-  function command(targetSocket, method, params = {}) {
+  function command(targetSocket, method, params = {}, timeoutMs = 15_000) {
     id += 1;
     const requestId = id;
     return new Promise((resolve, reject) => {
       const timeout = setTimeout(() => {
         requests.delete(requestId);
         reject(new Error(`Timed out: ${method}`));
-      }, 15_000);
+      }, timeoutMs);
       requests.set(requestId, (message) => {
         clearTimeout(timeout);
         if (message.error || message.result?.exceptionDetails) {
@@ -397,14 +397,27 @@ async function main() {
       modifiers: 2,
     };
     // rawKeyDown is the only CDP key type that reaches before-input-event.
-    await command(targetSocket, 'Input.dispatchKeyEvent', {
-      type: 'rawKeyDown',
-      ...params,
-    });
-    await command(targetSocket, 'Input.dispatchKeyEvent', {
-      type: 'keyUp',
-      ...params,
-    });
+    // Shortcuts like Ctrl+T and Ctrl+W synchronously detach or destroy the
+    // active WebContentsView during rawKeyDown, so use a short timeout and
+    // ignore dropped acks when the view is no longer attached.
+    await command(
+      targetSocket,
+      'Input.dispatchKeyEvent',
+      {
+        type: 'rawKeyDown',
+        ...params,
+      },
+      2_000,
+    ).catch(() => {});
+    await command(
+      targetSocket,
+      'Input.dispatchKeyEvent',
+      {
+        type: 'keyUp',
+        ...params,
+      },
+      1_000,
+    ).catch(() => {});
   };
   const pressKey = async (key, targetSocket = socket, modifiers = 0) => {
     const virtualKeyCodes = { F5: 116 };
@@ -418,14 +431,24 @@ async function main() {
       modifiers,
     };
     // rawKeyDown is the only CDP key type that reaches before-input-event.
-    await command(targetSocket, 'Input.dispatchKeyEvent', {
-      type: 'rawKeyDown',
-      ...params,
-    });
-    await command(targetSocket, 'Input.dispatchKeyEvent', {
-      type: 'keyUp',
-      ...params,
-    });
+    await command(
+      targetSocket,
+      'Input.dispatchKeyEvent',
+      {
+        type: 'rawKeyDown',
+        ...params,
+      },
+      2_000,
+    ).catch(() => {});
+    await command(
+      targetSocket,
+      'Input.dispatchKeyEvent',
+      {
+        type: 'keyUp',
+        ...params,
+      },
+      1_000,
+    ).catch(() => {});
   };
   const tabCount = () =>
     evaluateToolbar("document.querySelectorAll('.axioo-tab').length");
@@ -586,9 +609,12 @@ async function main() {
   assert.equal(await activeTabIndex(), 0);
 
   // The reordered tab is active, so its view owns the keyboard shortcuts.
-  await pressCtrl('T', second.pageSocket);
+  // Opening or closing a tab detaches or destroys the active WebContentsView
+  // on rawKeyDown, which can drop the CDP ack on headless CI runners; the
+  // tab count assertions below verify that the shortcut took effect.
+  await pressCtrl('T', second.pageSocket).catch(() => {});
   await waitFor(async () => (await tabCount()) === 3, 'third tab', 15_000);
-  await pressCtrl('W', second.pageSocket);
+  await pressCtrl('W', second.pageSocket).catch(() => {});
   await waitFor(async () => (await tabCount()) === 2, 'closed tab', 15_000);
   assert.equal(await activeTabIndex(), 1);
   assert.equal((await tabIds())[1], originalId);
