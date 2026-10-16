@@ -1,5 +1,5 @@
 import Store from 'electron-store';
-import { parseBaseUrl } from './navigation';
+import { getRestorableStoreUrl, HOME_URL, parseBaseUrl } from './navigation';
 import type { SessionTabs } from './navigation';
 
 export type AppSettings = Record<string, unknown> & {
@@ -29,16 +29,26 @@ export function getSettingsStore(): Store<AppSettings> {
 
 export function getConfiguredBaseUrl(
   store: Store<AppSettings> = getSettingsStore(),
+  baseUrl: string = HOME_URL,
 ): string | null {
+  if (
+    process.env.APP_URL &&
+    baseUrl === HOME_URL &&
+    HOME_URL !== 'https://axioo.store/'
+  ) {
+    return null;
+  }
   const raw = store.get('baseUrl');
-  return parseBaseUrl(raw);
+  const parsed = parseBaseUrl(raw, baseUrl);
+  return parsed ? getRestorableStoreUrl(parsed, baseUrl) : null;
 }
 
 export function setConfiguredBaseUrl(
   url: string,
   store: Store<AppSettings> = getSettingsStore(),
+  baseUrl: string = HOME_URL,
 ): boolean {
-  const valid = parseBaseUrl(url);
+  const valid = parseBaseUrl(url, baseUrl);
   if (!valid) return false;
   store.set('baseUrl', valid);
   return true;

@@ -1,3 +1,5 @@
+import { loadDevEnv } from './env';
+
 export const PRODUCTION_HOME_URL = 'https://axioo.store/';
 
 export const PRODUCTION_HOST = new URL(PRODUCTION_HOME_URL).hostname;
@@ -11,7 +13,8 @@ const isSameStoreHost = (host: string, baseHost: string) => {
   return LOOPBACK_HOSTS.has(host) && LOOPBACK_HOSTS.has(baseHost);
 };
 
-const resolveHomeUrl = () => {
+export const resolveHomeUrl = () => {
+  loadDevEnv();
   const configured = process.env.APP_URL;
   if (!configured) return PRODUCTION_HOME_URL;
 
@@ -41,20 +44,35 @@ export function isValidBaseUrlHost(host: string): boolean {
   );
 }
 
-export function parseBaseUrl(raw: unknown): string | null {
+export function parseBaseUrl(
+  raw: unknown,
+  baseUrl: string = HOME_URL,
+): string | null {
   if (typeof raw !== 'string') return null;
   const trimmed = raw.trim();
   if (!trimmed) return null;
 
   try {
+    const base = new URL(baseUrl);
+    const productionBase =
+      base.protocol === 'https:' &&
+      base.hostname === PRODUCTION_HOST &&
+      !base.port;
+
     const hasScheme = /^[a-zA-Z][a-zA-Z0-9+.-]*:/.test(trimmed);
-    const candidate = hasScheme ? trimmed : `https://${trimmed}`;
+    const candidate = hasScheme ? trimmed : `${base.protocol}//${trimmed}`;
     const url = new URL(candidate);
 
-    if (url.protocol !== 'https:') return null;
     if (url.username || url.password) return null;
-    if (url.port && url.port !== '443') return null;
-    if (!isValidBaseUrlHost(url.hostname)) return null;
+
+    if (productionBase) {
+      if (url.protocol !== 'https:') return null;
+      if (url.port && url.port !== '443') return null;
+      if (!isValidBaseUrlHost(url.hostname)) return null;
+    } else {
+      if (url.protocol !== base.protocol) return null;
+      if (getStoreUrl(url.href, baseUrl) === null) return null;
+    }
 
     const pathname = url.pathname.toLowerCase();
     if (
@@ -71,8 +89,11 @@ export function parseBaseUrl(raw: unknown): string | null {
   }
 }
 
-export function isValidBaseUrl(raw: unknown): boolean {
-  return parseBaseUrl(raw) !== null;
+export function isValidBaseUrl(
+  raw: unknown,
+  baseUrl: string = HOME_URL,
+): boolean {
+  return parseBaseUrl(raw, baseUrl) !== null;
 }
 
 export function getStartupUrl(
